@@ -1,0 +1,70 @@
+:root{
+  color-scheme:dark;
+  --bg:#130709;
+  --bg-2:#1a0b0e;
+  --panel:#241015;
+  --panel-2:#34161d;
+  --panel-3:#431b24;
+  --term:#090304;
+  --border:#5a2631;
+  --border-2:#7e3948;
+  --text:#f7edf0;
+  --muted:#d6b7be;
+  --accent:#c34a60;
+  --accent-2:#8f2538;
+  --danger:#ff8899;
+  --shadow:rgba(0,0,0,.42);
+}
+*{box-sizing:border-box}
+html,body{margin:0;width:100%;height:100%;background:linear-gradient(180deg,var(--bg),var(--bg-2));color:var(--text);font-family:Inter,Segoe UI,system-ui,sans-serif}
+body{overflow:hidden}
+button,select,input{font:inherit}
+.hidden{display:none!important}
+.app-shell{height:100vh;display:grid;grid-template-rows:auto 1fr;gap:12px;padding:14px}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 16px;border:1px solid var(--border);border-radius:18px;background:linear-gradient(180deg,var(--panel-3),var(--panel));box-shadow:0 14px 40px var(--shadow)}
+.brand{display:flex;align-items:center;gap:12px}
+.brand h1{margin:0;font-size:18px}
+.brand p{margin:2px 0 0;color:var(--muted);font-size:12px}
+.brand-mark{width:18px;height:18px;border-radius:999px;background:linear-gradient(180deg,var(--accent),#d98a9a)}
+.layout{min-height:0;display:grid;grid-template-columns:340px 1fr;gap:12px}
+.sidebar{min-height:0;display:grid;grid-template-rows:auto auto auto 1fr;gap:12px}
+.panel{border:1px solid var(--border);border-radius:18px;background:linear-gradient(180deg,var(--panel-2),var(--panel));box-shadow:0 14px 40px var(--shadow);padding:16px}
+.panel h2{margin:0 0 14px;font-size:15px}
+.field{display:grid;gap:6px;margin-bottom:12px}
+.field span{color:var(--muted);font-size:12px}
+select,input,button{height:40px;border-radius:12px;border:1px solid var(--border-2);background:#1d0f14;color:var(--text);padding:0 12px}
+button{cursor:pointer;background:linear-gradient(180deg,#2c1319,#1a0b0e)}
+button:hover,select:hover,input:hover,input:focus,select:focus{border-color:#da7086;outline:none;box-shadow:0 0 0 2px rgba(195,74,96,.15)}
+.button-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.actions-grid .wide-btn{grid-column:1 / -1}
+.full-btn{margin-top:10px;width:100%}
+.status-line{color:var(--text);min-height:24px;font-weight:600}
+.target-info{margin-top:10px;font-size:13px;color:var(--muted);white-space:pre-wrap;line-height:1.45}
+.info-block{font-size:13px;color:var(--muted);line-height:1.45;white-space:pre-wrap}
+.status-panel{min-height:0}
+.workspace{min-height:0;display:grid;grid-template-rows:auto 1fr;border:1px solid var(--border);border-radius:20px;background:var(--term);overflow:hidden;box-shadow:0 20px 50px var(--shadow)}
+.tabs-bar{border-bottom:1px solid #35161d;background:linear-gradient(180deg,#2a1117,#16090c);padding:8px}
+.tabs-list{display:flex;gap:8px;overflow-x:auto}
+.tab-chip{display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 12px;border-radius:12px;border:1px solid var(--border-2);background:#1b0b10;color:var(--muted);cursor:pointer;white-space:nowrap;max-width:280px}
+.tab-chip span{overflow:hidden;text-overflow:ellipsis}
+.tab-chip.active{color:var(--text);border-color:#df758a;background:#3c1620}
+.tab-chip button{all:unset;cursor:pointer;color:inherit;font-size:16px;line-height:1}
+.terminal-stack{position:relative;min-height:0}
+.terminal-pane{position:absolute;inset:0;display:none;padding:10px}
+.terminal-pane.active{display:block}
+.terminal-host{width:100%;height:100%}
+.xterm,.xterm-screen,.xterm-viewport{height:100%!important}
+.xterm-viewport{overflow-y:auto!important}
+.overlay{position:fixed;inset:0;background:rgba(12,4,6,.88);display:grid;place-items:center;z-index:2000}
+.login-card{width:min(420px,calc(100vw - 32px));border:1px solid var(--border);border-radius:20px;background:linear-gradient(180deg,var(--panel-3),var(--panel));padding:24px;box-shadow:0 24px 60px rgba(0,0,0,.45);display:grid;gap:14px}
+.login-card h1{margin:0}
+.login-card p{margin:0;color:var(--muted)}
+.login-card label{display:grid;gap:6px}
+.hint{min-height:18px;color:var(--danger);font-size:13px}
+.credentials{display:grid;gap:10px}
+.credential-note{color:var(--muted);font-size:12px;margin-top:-2px}
+.top-actions{display:flex;gap:8px}
+@media (max-width:1180px){
+  .layout{grid-template-columns:1fr}
+  .sidebar{grid-template-rows:auto auto auto auto}
+}

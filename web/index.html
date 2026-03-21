@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Zenoterm Remote Tabs</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css">
+  <link rel="stylesheet" href="/web/style.css">
+</head>
+<body>
+  <div id="loginScreen" class="overlay hidden">
+    <form id="loginForm" class="login-card">
+      <h1>Zenoterm</h1>
+      <p>Acceso a la consola web</p>
+      <label>
+        <span>Contraseña de la aplicación</span>
+        <input id="loginPassword" type="password" autocomplete="current-password" required>
+      </label>
+      <button type="submit">Entrar</button>
+      <div id="loginMessage" class="hint"></div>
+    </form>
+  </div>
+
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark"></div>
+        <div>
+          <h1>Zenoterm Remote Tabs</h1>
+          <p id="appSubtitle">Terminal web con tabs, targets predefinidos y login</p>
+        </div>
+      </div>
+      <div class="top-actions">
+        <button id="logoutBtn" type="button">Salir</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <aside class="sidebar">
+        <section class="panel">
+          <h2>Config global</h2>
+          <label class="field">
+            <span>Target por defecto para pestañas nuevas</span>
+            <select id="defaultTargetSelect"></select>
+          </label>
+          <label class="field">
+            <span>Scrollback por defecto</span>
+            <select id="defaultScrollbackSelect">
+              <option value="5000">5.000</option>
+              <option value="20000" selected>20.000</option>
+              <option value="50000">50.000</option>
+            </select>
+          </label>
+          <div id="globalInfo" class="info-block"></div>
+        </section>
+
+        <section class="panel">
+          <h2>Crear nueva pestaña</h2>
+          <label class="field">
+            <span>Nombre de la pestaña</span>
+            <input id="newTabName" type="text" placeholder="Ej. Producción / SSH casa">
+          </label>
+          <label class="field">
+            <span>Target inicial</span>
+            <select id="newTabTargetSelect"></select>
+          </label>
+          <button id="newTabBtn" class="full-btn" type="button">+ Crear pestaña</button>
+        </section>
+
+        <section class="panel">
+          <h2>Acciones sobre conexión seleccionada</h2>
+          <label class="field">
+            <span>Target de la pestaña activa</span>
+            <select id="targetSelect"></select>
+          </label>
+          <label class="field">
+            <span>Scrollback de la pestaña activa</span>
+            <select id="scrollbackSelect">
+              <option value="5000">5.000</option>
+              <option value="20000" selected>20.000</option>
+              <option value="50000">50.000</option>
+            </select>
+          </label>
+          <div id="credentialFields" class="credentials"></div>
+          <div class="button-grid actions-grid">
+            <button id="connectBtn" type="button">Conectar</button>
+            <button id="restartBtn" type="button">Reconectar</button>
+            <button id="clearBtn" type="button">Limpiar</button>
+            <button id="copyBtn" type="button">Copiar todo</button>
+            <button id="saveBtn" type="button" class="wide-btn">Guardar salida</button>
+          </div>
+        </section>
+
+        <section class="panel status-panel">
+          <h2>Estado de la pestaña activa</h2>
+          <div id="statusLine" class="status-line">Inicializando…</div>
+          <div id="targetInfo" class="target-info"></div>
+        </section>
+      </aside>
+
+      <section class="workspace">
+        <div class="tabs-bar">
+          <div id="tabsList" class="tabs-list"></div>
+        </div>
+        <div id="terminalStack" class="terminal-stack"></div>
+      </section>
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js"></script>
+  <script src="/web/app.js"></script>
+</body>
+</html>

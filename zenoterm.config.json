@@ -1,0 +1,10 @@
+{
+  "app": {"title": "Zenoterm Remote Tabs"},
+  "server": {"host": "127.0.0.1", "port": 8765, "open_browser": true, "auto_port_if_busy": true},
+  "auth": {"mode": "password", "app_password": "admin", "session_secret": "123456789", "session_ttl_seconds": 43200},
+  "targets": [
+    {"id": "local-pwsh", "label": "PC local · PowerShell 7", "mode": "direct", "description": "Abre la shell local del PC donde corre la app.", "shell_id": "powershell"},
+    {"id": "server-linux-pass", "label": "Servidor Linux · SSH password", "mode": "ssh_password", "description": "SSH con usuario fijo y contraseña efímera pedida al conectar.", "host": "192.168.1.50", "port": 22, "username": "andrea", "prompt_password": true, "strict_host_key": true},
+    {"id": "server-linux-key", "label": "Servidor Linux · SSH key", "mode": "ssh_key", "description": "SSH con clave privada ya definida en config y passphrase efímera opcional.", "host": "example.com", "port": 22, "username": "andrea", "private_key_path": "C:\\Users\\Andrea\\.ssh\\id_ed25519", "prompt_passphrase": true, "strict_host_key": true}
+  ]
+}
