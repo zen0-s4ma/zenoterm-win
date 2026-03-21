@@ -73,14 +73,7 @@ Dejas la app escuchando en un host de tu red privada y te conectas por navegador
 
 Estas capturas están incluidas dentro del proyecto, en `docs/images/`.
 
-### Vista principal con tema corinto y barra lateral operativa
-![Vista principal](docs/images/01-interfaz-principal-corinto.png)
-
-### Vista de terminal activa durante las primeras pruebas de conexión
-![Terminal conectando](docs/images/02-terminal-conectando.png)
-
-### Vista base de la terminal web
-![Terminal base](docs/images/03-terminal-base.png)
+### Vista base de la terminal web### 
 
 ---
 
