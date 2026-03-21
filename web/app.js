@@ -55,10 +55,13 @@ async function fetchJson(url, options = {}) {
 
 function buildGlobalInfo() {
   const loginText = runtimeConfig.auth.login_required ? 'sí' : 'no';
+  const locals = runtimeConfig.targets.filter((t) => t.mode === 'direct').length;
+  const remotes = runtimeConfig.targets.length - locals;
   els.globalInfo.textContent = [
     `Login requerido: ${loginText}`,
     `Targets definidos: ${runtimeConfig.targets.length}`,
-    'El target y scrollback de aquí se usan al crear pestañas nuevas.',
+    `Locales: ${locals} · Remotos: ${remotes}`,
+    'Los targets remotos piden host, puerto, usuario y credenciales dentro de cada pestaña.',
   ].join('\n');
 }
 
@@ -73,23 +76,38 @@ function fillSelect(select, selectedValue = '') {
   }
 }
 
+function targetSummary(target, tab) {
+  const lines = [];
+  if (target.mode === 'direct') {
+    lines.push(`Shell local: ${target.label}`);
+  } else {
+    lines.push(`Host: ${tab.credentials.host || target.host || '(pendiente)'}`);
+    lines.push(`Puerto: ${tab.credentials.port || target.port || 22}`);
+    lines.push(`Usuario: ${tab.credentials.username || target.username || '(pendiente)'}`);
+    if (target.mode === 'ssh_key') lines.push(`Clave privada: ${tab.credentials.private_key_path || target.private_key_path || '(pendiente)'}`);
+    lines.push(`Shell remota a lanzar: ${target.startup_command || '(shell por defecto remota)'}`);
+    lines.push(`Host key estricta: ${target.strict_host_key ? 'sí' : 'no'}`);
+  }
+  return lines;
+}
+
 function describeTarget(target, tab) {
   if (!target || !tab) return 'Sin pestaña activa.';
   const lines = [
     `Nombre: ${tab.title}`,
+    `Target: ${target.label}`,
     `Estado: ${tab.lastStatus}`,
     `Modo: ${target.mode}`,
     target.description || '',
+    ...targetSummary(target, tab),
+    `Scrollback: ${Number(tab.scrollback || 0).toLocaleString('es-ES')}`,
+    `Conectada: ${tab.connected ? 'sí' : 'no'}`,
   ];
-  if (target.mode.startsWith('ssh')) {
-    lines.push(`Host: ${target.host}:${target.port}`);
-    lines.push(`Usuario: ${target.username}`);
-    lines.push(`Host key estricta: ${target.strict_host_key ? 'sí' : 'no'}`);
-  }
-  if (target.mode === 'direct') lines.push(`Shell local: ${target.shell_id || 'auto'}`);
-  lines.push(`Scrollback: ${tab.scrollback.toLocaleString('es-ES')}`);
-  lines.push(`Conectada: ${tab.connected ? 'sí' : 'no'}`);
   return lines.filter(Boolean).join('\n');
+}
+
+function credentialFieldHtml(kind, label, value = '', type = 'text', placeholder = '') {
+  return `<label class="field"><span>${label}</span><input data-cred="${kind}" type="${type}" value="${value || ''}" placeholder="${placeholder || ''}" autocomplete="off"></label>`;
 }
 
 function renderCredentialFields() {
@@ -99,27 +117,29 @@ function renderCredentialFields() {
   els.credentialFields.innerHTML = '';
   if (!tab || !target) return;
 
+  const chunks = [];
+  if (target.mode.startsWith('ssh')) {
+    chunks.push(credentialFieldHtml('host', 'Host remoto', tab.credentials.host || target.host || '', 'text', 'Ej. 192.168.1.50 o servidor.example.com'));
+    chunks.push(credentialFieldHtml('port', 'Puerto SSH', String(tab.credentials.port || target.port || 22), 'number', '22'));
+    chunks.push(credentialFieldHtml('username', 'Usuario SSH', tab.credentials.username || target.username || '', 'text', 'Ej. admin'));
+  }
   if (target.mode === 'ssh_password') {
-    const wrap = document.createElement('label');
-    wrap.className = 'field';
-    wrap.innerHTML = '<span>Contraseña SSH efímera</span><input id="runtimePassword" type="password" autocomplete="new-password" placeholder="Se usa solo en esta pestaña">';
-    els.credentialFields.appendChild(wrap);
-    const note = document.createElement('div');
-    note.className = 'credential-note';
-    note.textContent = 'No se guarda en config ni se persiste en el servidor.';
-    els.credentialFields.appendChild(note);
-    const input = wrap.querySelector('input');
-    input.value = tab.credentials.password || '';
+    chunks.push(credentialFieldHtml('password', 'Contraseña SSH efímera', tab.credentials.password || '', 'password', 'Solo para esta pestaña'));
+    chunks.push('<div class="credential-note">La contraseña no se guarda en disco y solo vive en memoria en esta pestaña.</div>');
   }
-
-  if (target.mode === 'ssh_key' && target.prompt_passphrase) {
-    const wrap = document.createElement('label');
-    wrap.className = 'field';
-    wrap.innerHTML = '<span>Passphrase de la clave privada</span><input id="runtimePassphrase" type="password" autocomplete="new-password" placeholder="Opcional o requerida según tu clave">';
-    els.credentialFields.appendChild(wrap);
-    const input = wrap.querySelector('input');
-    input.value = tab.credentials.passphrase || '';
+  if (target.mode === 'ssh_key') {
+    chunks.push(credentialFieldHtml('private_key_path', 'Ruta de clave privada', tab.credentials.private_key_path || target.private_key_path || '', 'text', 'Ej. C:\\Users\\TuUsuario\\.ssh\\id_ed25519'));
+    chunks.push(credentialFieldHtml('passphrase', 'Passphrase efímera', tab.credentials.passphrase || '', 'password', 'Vacía si tu clave no tiene passphrase'));
+    chunks.push('<div class="credential-note">La passphrase no se guarda. La ruta de la clave puede venir del target o escribirse por pestaña.</div>');
   }
+  els.credentialFields.innerHTML = chunks.join('');
+  els.credentialFields.querySelectorAll('[data-cred]').forEach((input) => {
+    input.addEventListener('input', () => {
+      updateActiveTabState();
+      const active = getActiveTab();
+      if (active) els.targetInfo.textContent = describeTarget(getTargetById(active.targetId), active);
+    });
+  });
 }
 
 function createTerminalForPane(host, scrollback) {
@@ -151,10 +171,12 @@ function buildWsUrl() {
 function currentCredentials() {
   const tab = getActiveTab();
   const target = tab ? getTargetById(tab.targetId) : null;
-  const credentials = {};
+  const credentials = { ...(tab?.credentials || {}) };
   if (!target) return credentials;
-  if (target.mode === 'ssh_password') credentials.password = document.getElementById('runtimePassword')?.value || '';
-  if (target.mode === 'ssh_key') credentials.passphrase = document.getElementById('runtimePassphrase')?.value || '';
+  els.credentialFields.querySelectorAll('[data-cred]').forEach((input) => {
+    const key = input.dataset.cred;
+    credentials[key] = input.type === 'number' ? Number(input.value || 0) : input.value || '';
+  });
   return credentials;
 }
 
@@ -474,9 +496,17 @@ function createNewTabFromControls() {
 function bindEvents() {
   els.loginForm.addEventListener('submit', handleLogin);
   els.logoutBtn.addEventListener('click', handleLogout);
-  els.targetSelect.addEventListener('change', () => { updateActiveTabState(); renderCredentialFields(); });
-  els.scrollbackSelect.addEventListener('change', () => { updateActiveTabState(); applyScrollbackToActiveTab(); });
-  els.defaultTargetSelect.addEventListener('change', () => { if (!els.newTabTargetSelect.dataset.touched) els.newTabTargetSelect.value = els.defaultTargetSelect.value; });
+  els.targetSelect.addEventListener('change', () => {
+    updateActiveTabState();
+    renderCredentialFields();
+  });
+  els.scrollbackSelect.addEventListener('change', () => {
+    updateActiveTabState();
+    applyScrollbackToActiveTab();
+  });
+  els.defaultTargetSelect.addEventListener('change', () => {
+    if (!els.newTabTargetSelect.dataset.touched) els.newTabTargetSelect.value = els.defaultTargetSelect.value;
+  });
   els.newTabTargetSelect.addEventListener('change', () => { els.newTabTargetSelect.dataset.touched = '1'; });
   els.connectBtn.addEventListener('click', () => connectActiveTab('start'));
   els.restartBtn.addEventListener('click', () => connectActiveTab('restart'));
@@ -497,7 +527,7 @@ function bindEvents() {
 async function loadBootstrap() {
   runtimeConfig = await fetchJson('/api/config');
   authStatus = await fetchJson('/api/auth/status');
-  els.appSubtitle.textContent = runtimeConfig.auth.login_required ? 'Terminal web con tabs, targets predefinidos y login' : 'Terminal web con tabs y targets predefinidos';
+  els.appSubtitle.textContent = runtimeConfig.auth.login_required ? 'Terminal web con tabs, targets locales y remotos y login' : 'Terminal web con tabs y targets locales y remotos';
   ensureAuthenticatedUi();
   fillSelect(els.defaultTargetSelect, runtimeConfig.targets[0]?.id || '');
   fillSelect(els.newTabTargetSelect, runtimeConfig.targets[0]?.id || '');

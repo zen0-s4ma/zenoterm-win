@@ -1,33 +1,83 @@
 # Guía de uso
 
-## Arranque
+## 1. Arranque
 
 ```powershell
+python -m pip install -r requirements.txt
 python app.py
 ```
 
-## Flujo básico
+## 2. Login
 
-1. Abre la web.
-2. Haz login con `auth.app_password` si `auth.mode = "password"`.
-3. Crea una pestaña con `+ Nueva pestaña`.
-4. Selecciona target.
-5. Introduce contraseña SSH o passphrase si ese target la pide.
+Si `auth.mode` es `password`, introduce `auth.app_password` para acceder.
+
+## 3. Columna izquierda
+
+### Config global
+Permite elegir:
+
+- target por defecto para pestañas nuevas;
+- scrollback por defecto.
+
+### Crear nueva pestaña
+Permite:
+
+- elegir nombre de pestaña;
+- elegir target inicial.
+
+### Acciones sobre conexión seleccionada
+Permite sobre la pestaña activa:
+
+- conectar;
+- reconectar;
+- limpiar;
+- copiar todo;
+- guardar salida a fichero.
+
+### Estado de la pestaña activa
+Muestra:
+
+- nombre;
+- target;
+- estado;
+- modo de conexión;
+- host, usuario y shell cuando aplica;
+- scrollback;
+- si está conectada o no.
+
+## 4. Uso de targets locales
+
+1. Crea la pestaña.
+2. Selecciona un target `Local: ...`.
+3. Pulsa `Conectar`.
+
+## 5. Uso de targets remotos por contraseña
+
+1. Crea la pestaña.
+2. Selecciona `Remote SSH User/Pass: ...`.
+3. Rellena host, puerto y usuario.
+4. Introduce la contraseña.
+5. Pulsa `Conectar`.
+
+## 6. Uso de targets remotos por clave
+
+1. Crea la pestaña.
+2. Selecciona `Remote SSH Public/Private key: ...`.
+3. Rellena host, puerto y usuario.
+4. Escribe la ruta de la clave privada.
+5. Escribe passphrase si aplica.
 6. Pulsa `Conectar`.
 
-## Tabs
-Cada pestaña mantiene su propia terminal, su propio WebSocket y su propio destino.
+## 7. Pestañas
 
-## Botones
-- `Conectar`: inicia la sesión de la pestaña activa.
-- `Reiniciar`: reinicia esa sesión.
-- `Limpiar`: limpia la terminal activa.
-- `Copiar todo`: copia el buffer de la pestaña activa.
-- `Salir`: invalida la sesión web.
+Cada pestaña mantiene:
 
-## Casos de uso
-- `direct`: shell local del PC Windows donde corre la app.
-- `ssh_password`: SSH con contraseña efímera.
-- `ssh_key`: SSH con clave privada y passphrase efímera opcional.
+- un nombre propio;
+- un target propio;
+- credenciales efímeras propias;
+- buffer propio;
+- WebSocket propio.
 
-Paramiko usa `invoke_shell()` con PTY para terminal interactiva, y FastAPI soporta múltiples conexiones `WebSocket` simultáneas. citeturn806613search1turn806613search3
+## 8. Guardar salida
+
+Pulsa `Guardar salida` para descargar un `.txt` con el contenido completo del buffer de la pestaña activa.
