@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Zenoterm Remote Tabs</title>
+  <title>ZenoRemote</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.11.1/styles/atom-one-dark.min.css">
   <link rel="stylesheet" href="/web/style.css?v=scheduler-1">
@@ -20,8 +20,8 @@
   </script>
   <div id="loginScreen" class="overlay hidden">
     <form id="loginForm" class="login-card">
-      <h1>Zenoterm</h1>
-      <p>Acceso a la consola web</p>
+      <h1>ZenoRemote</h1>
+      <p>Acceso unificado a terminales, scripts, Docker, Scheduler y Explorer</p>
       <label>
         <span>Usuario</span>
         <input id="loginUsername" type="text" autocomplete="username" required>
@@ -42,8 +42,8 @@
       <span class="app-loading-blob blob-c"></span>
     </div>
     <div class="app-loading-card">
-      <div class="app-loading-badge">Cargando sesión</div>
-      <h2 id="appLoadingTitle">Preparando Zenoterm</h2>
+      <div class="app-loading-badge">Cargando entorno</div>
+      <h2 id="appLoadingTitle">Preparando ZenoRemote</h2>
       <p id="appLoadingDetail">Montando pestañas, conectando terminales y dejando todo listo…</p>
       <div class="app-loading-progress" aria-hidden="true"><span></span></div>
       <div class="app-loading-dots" aria-hidden="true"><span></span><span></span><span></span></div>
@@ -55,21 +55,74 @@
       <div class="brand">
         <div class="brand-mark"></div>
         <div>
-          <h1>Zenoterm Remote Tabs</h1>
-          <p id="appSubtitle">Terminal web con tabs, targets dinámicos y login</p>
+          <h1>ZenoRemote</h1>
+          <p id="appSubtitle">Acceso unificado a terminales, scripts, Docker, Scheduler y Explorer.</p>
         </div>
       </div>
       <div class="top-actions">
-        <button id="scriptsPageBtn" type="button">Scripts</button>
-        <button id="dockerPageBtn" type="button">Docker Management</button>
-        <button id="schedulerPageBtn" type="button">Scheduler</button>
-        <button id="explorerPageBtn" type="button">Explorer</button>
-        <button id="configBtn" type="button">Config</button>
-        <button id="adminPageBtn" type="button">Administracion</button>
-        <button id="backBtn" type="button" class="hidden">Volver</button>
-        <button id="logoutBtn" type="button">Salir</button>
+        <button id="homePageBtn" type="button" class="top-nav-btn"><span class="top-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M9 21v-6h6v6"/></svg></span><span>Home</span></button>
+        <button id="terminalPageBtn" type="button" class="top-nav-btn"><span class="top-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3"/><path d="M12.5 15H17"/></svg></span><span>Terminal</span></button>
+        <button id="scriptsPageBtn" type="button" class="top-nav-btn"><span class="top-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M7 8h10"/><path d="M7 12h10"/><path d="M7 16h6"/><rect x="3" y="4" width="18" height="16" rx="2"/></svg></span><span>Scripts</span></button>
+        <button id="dockerPageBtn" type="button" class="top-nav-btn"><span class="top-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M8 8V5h4v3"/><path d="M12 8V5h4v3"/><path d="M4 11V8h4v3"/><path d="M8 11V8h4v3"/><path d="M12 11V8h4v3"/><path d="M16 11V8h4v3"/><path d="M5 14h11.5a4.5 4.5 0 0 0 4-2.4l.5-1.1h-2.6a2.8 2.8 0 0 0-2.4 1.3l-.2.3H4.5A1.5 1.5 0 0 0 3 13.6V14a4 4 0 0 0 4 4h5a7 7 0 0 0 7-7"/></svg></span><span>Docker</span></button>
+        <button id="schedulerPageBtn" type="button" class="top-nav-btn"><span class="top-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4"/><path d="M16 2v4"/><path d="M3 10h18"/><path d="m9 15 2 2 4-4"/></svg></span><span>Scheduler</span></button>
+        <button id="explorerPageBtn" type="button" class="top-nav-btn"><span class="top-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/></svg></span><span>Explorer</span></button>
+        <button id="configBtn" type="button" class="top-nav-btn"><span class="top-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06A1.65 1.65 0 0 0 15 19.4a1.65 1.65 0 0 0-1 .6 1.65 1.65 0 0 0-.4 1V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-.4-1 1.65 1.65 0 0 0-1-.6 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-.6-1 1.65 1.65 0 0 0-1-.4H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1-.4 1.65 1.65 0 0 0 .6-1 1.65 1.65 0 0 0-.33-1.82L4.3 6.32a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-.6 1.65 1.65 0 0 0 .4-1V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 .4 1 1.65 1.65 0 0 0 1 .6 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.24.31.44.65.6 1 .11.32.11.66 0 1-.16.35-.36.69-.6 1Z"/></svg></span><span>Config</span></button>
+        <button id="adminPageBtn" type="button" class="top-nav-btn"><span class="top-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/><path d="M20 8v6"/><path d="M23 11h-6"/></svg></span><span>Administración</span></button>
+        <button id="backBtn" type="button" class="hidden top-nav-btn top-nav-btn-ghost"><span class="top-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></span><span>Volver</span></button>
+        <button id="logoutBtn" type="button" class="top-nav-btn top-nav-btn-logout"><span class="top-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg></span><span>Salir</span></button>
+        <div id="topUserBadge" class="top-user-badge hidden"><span class="top-user-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/></svg></span><span id="topUserName">Usuario</span></div>
       </div>
     </header>
+
+
+
+    <main id="homeView" class="config-view hidden">
+      <section class="config-panel home-panel">
+        <div class="config-header home-header">
+          <div>
+            <h2>Home</h2>
+            <p>Accesos rápidos a todas las áreas de ZenoRemote para entrar directo donde necesites.</p>
+          </div>
+        </div>
+        <div class="home-grid">
+          <button type="button" class="home-link-card" data-home-target="terminal">
+            <span class="home-link-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3"/><path d="M12.5 15H17"/></svg></span>
+            <strong>Terminal</strong>
+            <span class="home-link-copy">Abre, organiza y usa tus pestañas locales, remotas o Docker.</span>
+          </button>
+          <button type="button" class="home-link-card" data-home-target="scripts" data-requires="manage_scripts">
+            <span class="home-link-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h10"/><path d="M7 12h10"/><path d="M7 16h6"/></svg></span>
+            <strong>Scripts</strong>
+            <span class="home-link-copy">Gestiona scripts reutilizables, categorías y ejecuciones rápidas.</span>
+          </button>
+          <button type="button" class="home-link-card" data-home-target="docker" data-requires="use_docker">
+            <span class="home-link-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M8 8V5h4v3"/><path d="M12 8V5h4v3"/><path d="M4 11V8h4v3"/><path d="M8 11V8h4v3"/><path d="M12 11V8h4v3"/><path d="M16 11V8h4v3"/><path d="M5 14h11.5a4.5 4.5 0 0 0 4-2.4l.5-1.1h-2.6a2.8 2.8 0 0 0-2.4 1.3l-.2.3H4.5A1.5 1.5 0 0 0 3 13.6V14a4 4 0 0 0 4 4h5a7 7 0 0 0 7-7"/></svg></span>
+            <strong>Docker</strong>
+            <span class="home-link-copy">Consulta el inventario, estados y grupos de contenedores del host.</span>
+          </button>
+          <button type="button" class="home-link-card" data-home-target="scheduler" data-requires="manage_scheduler">
+            <span class="home-link-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4"/><path d="M16 2v4"/><path d="M3 10h18"/><path d="m9 15 2 2 4-4"/></svg></span>
+            <strong>Scheduler</strong>
+            <span class="home-link-copy">Programa tareas, revisa logs y controla automatizaciones desde un solo sitio.</span>
+          </button>
+          <button type="button" class="home-link-card" data-home-target="explorer" data-requires="use_explorer">
+            <span class="home-link-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/></svg></span>
+            <strong>Explorer</strong>
+            <span class="home-link-copy">Navega carpetas, abre archivos y trabaja con el sistema de forma visual.</span>
+          </button>
+          <button type="button" class="home-link-card" data-home-target="config">
+            <span class="home-link-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06A1.65 1.65 0 0 0 15 19.4a1.65 1.65 0 0 0-1 .6 1.65 1.65 0 0 0-.4 1V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-.4-1 1.65 1.65 0 0 0-1-.6 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-.6-1 1.65 1.65 0 0 0-1-.4H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1-.4 1.65 1.65 0 0 0 .6-1 1.65 1.65 0 0 0-.33-1.82L4.3 6.32a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-.6 1.65 1.65 0 0 0 .4-1V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 .4 1 1.65 1.65 0 0 0 1 .6 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.24.31.44.65.6 1 .11.32.11.66 0 1-.16.35-.36.69-.6 1Z"/></svg></span>
+            <strong>Config</strong>
+            <span class="home-link-copy">Ajusta parámetros globales, presets y preferencias generales del entorno.</span>
+          </button>
+          <button type="button" class="home-link-card" data-home-target="administration" data-requires="manage_administration">
+            <span class="home-link-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/><path d="M20 8v6"/><path d="M23 11h-6"/></svg></span>
+            <strong>Administración</strong>
+            <span class="home-link-copy">Gestiona usuarios, permisos y visibilidad de funciones según el perfil.</span>
+          </button>
+        </div>
+      </section>
+    </main>
 
     <main id="mainView" class="layout">
       <aside class="sidebar-scroll">
@@ -203,7 +256,7 @@
                 <span>Grupo</span>
                 <input id="aliasFolderInput" type="text" placeholder="Ej. mantenimiento/red">
               </label>
-              <div class="credential-note">Este alias se guarda dentro de Zenoterm y solo aparece para este tipo de terminal. No se crea en el host ni en la sesión SSH.</div>
+              <div class="credential-note">Este alias se guarda dentro de ZenoRemote y solo aparece para este tipo de terminal. No se crea en el host ni en la sesión SSH.</div>
               <button id="createAliasBtn" type="button">Guardar alias</button>
               <div id="aliasMessage" class="info-inline"></div>
             </div>
@@ -234,8 +287,30 @@
       <section class="workspace">
         <div class="tabs-bar">
           <div id="tabsList" class="tabs-list"></div>
+          <div class="terminal-zoom-toolbar" aria-label="Zoom de terminal">
+            <button id="terminalZoomOutBtn" type="button" class="terminal-zoom-btn" title="Reducir zoom">A−</button>
+            <button id="terminalZoomResetBtn" type="button" class="terminal-zoom-btn terminal-zoom-reset" title="Restablecer zoom">100%</button>
+            <button id="terminalZoomInBtn" type="button" class="terminal-zoom-btn" title="Aumentar zoom">A+</button>
+          </div>
         </div>
-        <div id="terminalStack" class="terminal-stack"></div>
+        <div id="terminalStack" class="terminal-stack">
+          <div id="workspaceEmptyState" class="workspace-empty-state" aria-live="polite">
+            <div class="workspace-empty-backdrop" aria-hidden="true">
+              <span class="workspace-empty-orb orb-a"></span>
+              <span class="workspace-empty-orb orb-b"></span>
+              <span class="workspace-empty-orb orb-c"></span>
+            </div>
+            <div class="workspace-empty-card">
+              <div class="workspace-empty-badge">Espacio listo</div>
+              <h2>No hay ninguna terminal abierta</h2>
+              <p>Este usuario ha entrado sin una sesión cargada. Puedes seleccionar una sesión desde la izquierda o crear una nueva pestaña cuando quieras.</p>
+              <div class="workspace-empty-hints">
+                <span>Usa <strong>Sesiones</strong> para cargar una ya preparada</span>
+                <span>O ve a <strong>Crear nueva pestaña</strong> para empezar manualmente</span>
+              </div>
+            </div>
+          </div>
+        </div>
         <div id="terminalMeta" class="terminal-meta"></div>
       </section>
     </main>

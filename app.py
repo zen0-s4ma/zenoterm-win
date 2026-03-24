@@ -35,6 +35,12 @@ from starlette.background import BackgroundTask
 from fastapi.staticfiles import StaticFiles
 import uvicorn
 
+if sys.platform.startswith("win") and hasattr(asyncio, "WindowsSelectorEventLoopPolicy"):
+    try:
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    except Exception:
+        pass
+
 try:
     import paramiko
 except Exception:
@@ -204,7 +210,7 @@ def normalize_explorer_entry(item: Any) -> dict[str, Any] | None:
 def default_explorer_entries_for_role(role: str) -> list[dict[str, Any]]:
     app_root = str(APP_DIR.resolve())
     access = "read_write" if role in {"administrator", "total", "no_docker"} else "read_only"
-    return [{"path": app_root, "label": "Proyecto Zenoterm", "access": access}]
+    return [{"path": app_root, "label": "Proyecto ZenoRemote", "access": access}]
 
 
 
@@ -498,7 +504,7 @@ def save_config(data: dict[str, Any]) -> None:
 CONFIG = load_config()
 ensure_auth_config_shape()
 ensure_user_management_shape()
-APP_TITLE = str(CONFIG.get("app", {}).get("title") or "Zenoterm Remote Tabs")
+APP_TITLE = str(CONFIG.get("app", {}).get("title") or "ZenoRemote")
 AUTH_MODE = str(CONFIG.get("auth", {}).get("mode") or "password")
 SESSION_TTL_SECONDS = int(CONFIG.get("auth", {}).get("session_ttl_seconds") or 43200)
 SESSION_SECRET = str(CONFIG.get("auth", {}).get("session_secret") or "change-me")
@@ -2074,7 +2080,7 @@ def default_script_description(path: Path) -> str:
     if name in known:
         return known[name]
     pretty = prettify_script_name(path.stem)
-    return f'Script autodetectado preparado para lanzarse desde Zenoterm: {pretty}.'
+    return f'Script autodetectado preparado para lanzarse desde ZenoRemote: {pretty}.'
 
 
 def build_discovered_script_entry(path: Path) -> dict[str, Any]:
@@ -4599,7 +4605,8 @@ async def api_docker_overview(request: Request) -> JSONResponse:
         return JSONResponse({"ok": False, "message": "No autenticado."}, status_code=401)
     if not user_has_permission(user, "use_docker"):
         return JSONResponse({"ok": False, "message": "El perfil actual no tiene acceso a Docker."}, status_code=403)
-    refresh_target_cache(get_active_session_id())
+    effective_active_session = get_active_session_id_from_signed_cookie(request.cookies.get(COOKIE_NAME), user)
+    refresh_target_cache(effective_active_session)
     return JSONResponse({"ok": True, "docker_management": build_docker_overview_for_user(user, effective_active_session), "config": runtime_config_for_request(request, user)})
 
 
@@ -4618,7 +4625,8 @@ async def api_docker_groups_save(request: Request) -> JSONResponse:
         if normalized:
             groups.append(normalized)
     save_docker_groups(groups)
-    refresh_target_cache(get_active_session_id())
+    effective_active_session = get_active_session_id_from_signed_cookie(request.cookies.get(COOKIE_NAME), user)
+    refresh_target_cache(effective_active_session)
     return JSONResponse({"ok": True, "docker_management": build_docker_overview_for_user(user, effective_active_session), "config": runtime_config_for_request(request, user)})
 
 
@@ -4637,7 +4645,8 @@ async def api_docker_groups_run(request: Request) -> JSONResponse:
         result = run_docker_group(group_id, str(data.get("run_mode") or ""))
     except Exception as exc:
         return JSONResponse({"ok": False, "message": str(exc)}, status_code=400)
-    refresh_target_cache(get_active_session_id())
+    effective_active_session = get_active_session_id_from_signed_cookie(request.cookies.get(COOKIE_NAME), user)
+    refresh_target_cache(effective_active_session)
     return JSONResponse({**result, "docker_management": build_docker_overview_for_user(user, effective_active_session), "config": runtime_config_for_request(request, user)})
 
 
@@ -4656,7 +4665,8 @@ async def api_docker_groups_generate_script(request: Request) -> JSONResponse:
         result = create_group_script_file(group_id, import_to_app=bool(data.get("import_to_app", True)))
     except Exception as exc:
         return JSONResponse({"ok": False, "message": str(exc)}, status_code=400)
-    refresh_target_cache(get_active_session_id())
+    effective_active_session = get_active_session_id_from_signed_cookie(request.cookies.get(COOKIE_NAME), user)
+    refresh_target_cache(effective_active_session)
     return JSONResponse({**result, "docker_management": build_docker_overview_for_user(user, effective_active_session), "config": runtime_config_for_request(request, user)})
 
 
@@ -4690,7 +4700,8 @@ async def api_docker_container_action(request: Request) -> JSONResponse:
         cmd = [action, container_name]
         cwd = None
     result = run_docker_cli(cmd, timeout=180, cwd=cwd, **docker_cli_connection_kwargs())
-    refresh_target_cache(get_active_session_id())
+    effective_active_session = get_active_session_id_from_signed_cookie(request.cookies.get(COOKIE_NAME), user)
+    refresh_target_cache(effective_active_session)
     return JSONResponse({
         "ok": result.returncode == 0,
         "action": action,
@@ -4965,11 +4976,30 @@ async def websocket_terminal(websocket: WebSocket) -> None:
     session: Optional[SessionBase] = None
 
     async def send_json(payload: dict[str, Any]) -> None:
-        await websocket.send_text(json.dumps(payload))
+        if stop_event.is_set():
+            return
+        try:
+            await websocket.send_text(json.dumps(payload))
+        except Exception:
+            stop_event.set()
 
     def schedule_send(payload: dict[str, Any]) -> None:
-        if not stop_event.is_set():
-            loop.call_soon_threadsafe(asyncio.create_task, send_json(payload))
+        if stop_event.is_set():
+            return
+        def _schedule() -> None:
+            if stop_event.is_set():
+                return
+            task = asyncio.create_task(send_json(payload))
+            def _consume_result(done_task: asyncio.Task) -> None:
+                try:
+                    done_task.result()
+                except Exception:
+                    stop_event.set()
+            task.add_done_callback(_consume_result)
+        try:
+            loop.call_soon_threadsafe(_schedule)
+        except RuntimeError:
+            stop_event.set()
 
     def reader_worker() -> None:
         nonlocal session
@@ -4983,7 +5013,8 @@ async def websocket_terminal(websocket: WebSocket) -> None:
         except Exception as exc:
             schedule_send({"type": "status", "status": "error", "message": f"{type(exc).__name__}: {exc}"})
         finally:
-            schedule_send({"type": "status", "status": "closed", "message": "La sesión ha terminado."})
+            if not stop_event.is_set():
+                schedule_send({"type": "status", "status": "closed", "message": "La sesión ha terminado."})
 
     try:
         await send_json({"type": "status", "status": "ready", "message": "WebSocket conectada."})

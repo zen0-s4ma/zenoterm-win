@@ -1,6 +1,6 @@
 {
   "app": {
-    "title": "Zenoterm Remote Tabs"
+    "title": "ZenoRemote"
   },
   "server": {
     "host": "127.0.0.1",
@@ -104,18 +104,18 @@
             "name": "test-auto-sesion"
           }
         ],
-        "default_session_id": "",
+        "default_session_id": "test-auto-sesion",
         "session_terminal_overrides": {
           "test-auto-sesion": {
             "local::powershell": {
-              "open_by_default": true,
               "startup_command": "ls",
-              "name": "test-auto-sesion-pws"
+              "name": "test-auto-sesion-pws",
+              "open_by_default": true
             },
             "local::cmd": {
-              "open_by_default": true,
               "startup_command": "dir",
-              "name": "test-auto-sesion-cmd"
+              "name": "test-auto-sesion-cmd",
+              "open_by_default": true
             }
           }
         }

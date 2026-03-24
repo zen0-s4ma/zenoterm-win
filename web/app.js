@@ -6,6 +6,8 @@ const els = {
   loginPassword: document.getElementById('loginPassword'),
   loginMessage: document.getElementById('loginMessage'),
   logoutBtn: document.getElementById('logoutBtn'),
+  homePageBtn: document.getElementById('homePageBtn'),
+  terminalPageBtn: document.getElementById('terminalPageBtn'),
   configBtn: document.getElementById('configBtn'),
   adminPageBtn: document.getElementById('adminPageBtn'),
   scriptsPageBtn: document.getElementById('scriptsPageBtn'),
@@ -21,6 +23,7 @@ const els = {
   sidebarClearDefaultSessionBtn: document.getElementById('sidebarClearDefaultSessionBtn'),
   sidebarSessionStatus: document.getElementById('sidebarSessionStatus'),
   sidebarSessionMessage: document.getElementById('sidebarSessionMessage'),
+  homeView: document.getElementById('homeView'),
   mainView: document.getElementById('mainView'),
   configView: document.getElementById('configView'),
   adminView: document.getElementById('adminView'),
@@ -29,6 +32,8 @@ const els = {
   schedulerView: document.getElementById('schedulerView'),
   explorerView: document.getElementById('explorerView'),
   appSubtitle: document.getElementById('appSubtitle'),
+  topUserBadge: document.getElementById('topUserBadge'),
+  topUserName: document.getElementById('topUserName'),
   appLoadingOverlay: document.getElementById('appLoadingOverlay'),
   appLoadingTitle: document.getElementById('appLoadingTitle'),
   appLoadingDetail: document.getElementById('appLoadingDetail'),
@@ -54,7 +59,11 @@ const els = {
   importDirOverwriteBtn: document.getElementById('importDirOverwriteBtn'),
   tabsList: document.getElementById('tabsList'),
   terminalStack: document.getElementById('terminalStack'),
+  workspaceEmptyState: document.getElementById('workspaceEmptyState'),
   terminalMeta: document.getElementById('terminalMeta'),
+  terminalZoomOutBtn: document.getElementById('terminalZoomOutBtn'),
+  terminalZoomResetBtn: document.getElementById('terminalZoomResetBtn'),
+  terminalZoomInBtn: document.getElementById('terminalZoomInBtn'),
   aliasCreatorSection: document.getElementById('aliasCreatorSection'),
   aliasNameInput: document.getElementById('aliasNameInput'),
   aliasCommandInput: document.getElementById('aliasCommandInput'),
@@ -181,6 +190,12 @@ const autoOpenedSessionTokens = new Set();
 let sessionAutoOpenInProgress = false;
 const NO_SESSION_AUTO_TOKEN = '__no_session__';
 const POST_LOGIN_BOOT_KEY = 'zenoterm.postLoginBoot';
+const TERMINAL_ZOOM_STORAGE_KEY = 'zenoremote.terminalZoomPercent';
+const LEGACY_TERMINAL_FONT_SIZE_STORAGE_KEY = 'zenoremote.terminalFontSize';
+const DEFAULT_TERMINAL_FONT_SIZE = 15;
+const TERMINAL_ZOOM_LEVELS = [40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160];
+let terminalZoomPercent = loadTerminalZoomPreference();
+let terminalFontSize = fontSizeForTerminalZoom(terminalZoomPercent);
 const bootOverlayMessages = [
   'Cargando interfaz y preferencias…',
   'Montando pestañas de la sesión…',
@@ -191,6 +206,9 @@ const bootOverlayMessages = [
 let bootOverlayTicker = null;
 let bootOverlayMessageIndex = 0;
 let bootOverlayLockedText = '';
+let pageWarmupTimer = null;
+const PAGE_WARMUP_REFRESH_MS = 90000;
+const pageWarmCache = { docker: 0, scheduler: 0, explorer: 0, scripts: 0, config: 0, administration: 0, home: 0 };
 let tabContextMenu = null;
 let terminalContextMenu = null;
 let activeAccordionSection = 'new-tab';
@@ -222,6 +240,109 @@ const getTargetById = (id) => {
   return knownTargets.get(id) || null;
 };
 const displayAliasGroup = (value) => normalizeAliasFolder(value || '') || 'default-group';
+
+function clampTerminalZoomPercent(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 100;
+  return TERMINAL_ZOOM_LEVELS.reduce((closest, current) => (
+    Math.abs(current - numeric) < Math.abs(closest - numeric) ? current : closest
+  ), TERMINAL_ZOOM_LEVELS[0]);
+}
+
+function fontSizeForTerminalZoom(value) {
+  const zoom = clampTerminalZoomPercent(value);
+  return Number(((DEFAULT_TERMINAL_FONT_SIZE * zoom) / 100).toFixed(2));
+}
+
+function terminalFontTuningForZoom(value = terminalZoomPercent) {
+  const zoom = clampTerminalZoomPercent(value);
+  if (zoom <= 50) return { lineHeight: 1.02, fontWeight: '600', fontWeightBold: '700' };
+  if (zoom <= 70) return { lineHeight: 1.06, fontWeight: '600', fontWeightBold: '700' };
+  if (zoom <= 90) return { lineHeight: 1.1, fontWeight: '500', fontWeightBold: '700' };
+  if (zoom <= 120) return { lineHeight: 1.16, fontWeight: '500', fontWeightBold: '700' };
+  return { lineHeight: 1.2, fontWeight: '500', fontWeightBold: '700' };
+}
+
+function loadTerminalZoomPreference() {
+  try {
+    const storedZoom = window.localStorage?.getItem(TERMINAL_ZOOM_STORAGE_KEY);
+    if (storedZoom !== null && storedZoom !== undefined && String(storedZoom).trim() !== '') {
+      return clampTerminalZoomPercent(storedZoom);
+    }
+    const legacyFontSize = window.localStorage?.getItem(LEGACY_TERMINAL_FONT_SIZE_STORAGE_KEY);
+    if (legacyFontSize !== null && legacyFontSize !== undefined && String(legacyFontSize).trim() !== '') {
+      const derivedZoom = clampTerminalZoomPercent((Number(legacyFontSize) / DEFAULT_TERMINAL_FONT_SIZE) * 100);
+      window.localStorage?.setItem(TERMINAL_ZOOM_STORAGE_KEY, String(derivedZoom));
+      return derivedZoom;
+    }
+  } catch (error) {}
+  return 100;
+}
+
+function persistTerminalZoomPreference(value) {
+  const zoom = clampTerminalZoomPercent(value);
+  try {
+    window.localStorage?.setItem(TERMINAL_ZOOM_STORAGE_KEY, String(zoom));
+    window.localStorage?.removeItem(LEGACY_TERMINAL_FONT_SIZE_STORAGE_KEY);
+  } catch (error) {}
+}
+
+function terminalZoomPercentLabel(value = terminalZoomPercent) {
+  return `${clampTerminalZoomPercent(value)}%`;
+}
+
+function updateTerminalZoomUi() {
+  if (els.terminalZoomResetBtn) els.terminalZoomResetBtn.textContent = terminalZoomPercentLabel();
+  if (els.terminalZoomOutBtn) els.terminalZoomOutBtn.disabled = terminalZoomPercent <= TERMINAL_ZOOM_LEVELS[0];
+  if (els.terminalZoomInBtn) els.terminalZoomInBtn.disabled = terminalZoomPercent >= TERMINAL_ZOOM_LEVELS[TERMINAL_ZOOM_LEVELS.length - 1];
+}
+
+function refreshAllTerminalViewports({ focusActive = true } = {}) {
+  tabs.forEach((tab) => {
+    syncTerminalViewport(tab, { focus: focusActive && tab.id === activeTabId });
+    pushTerminalResize(tab);
+  });
+}
+
+function applyTerminalZoomToTerm(term, zoom = terminalZoomPercent) {
+  if (!term) return;
+  const fontSize = fontSizeForTerminalZoom(zoom);
+  const tuning = terminalFontTuningForZoom(zoom);
+  try { term.options.fontSize = fontSize; } catch (error) {}
+  try { term.options.lineHeight = tuning.lineHeight; } catch (error) {}
+  try { term.options.fontWeight = tuning.fontWeight; } catch (error) {}
+  try { term.options.fontWeightBold = tuning.fontWeightBold; } catch (error) {}
+  try { term.refresh?.(0, Math.max(0, term.rows - 1)); } catch (error) {}
+}
+
+function queueTerminalZoomViewportRefresh({ focusActive = true } = {}) {
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      refreshAllTerminalViewports({ focusActive });
+    });
+  });
+}
+
+function setTerminalZoom(nextZoom, { focusActive = true } = {}) {
+  const clamped = clampTerminalZoomPercent(nextZoom);
+  terminalZoomPercent = clamped;
+  terminalFontSize = fontSizeForTerminalZoom(clamped);
+  persistTerminalZoomPreference(clamped);
+  tabs.forEach((tab) => applyTerminalZoomToTerm(tab?.term, clamped));
+  queueTerminalZoomViewportRefresh({ focusActive });
+  updateTerminalZoomUi();
+}
+
+function adjustTerminalZoom(delta, options = {}) {
+  const currentIndex = TERMINAL_ZOOM_LEVELS.indexOf(clampTerminalZoomPercent(terminalZoomPercent));
+  const safeIndex = currentIndex >= 0 ? currentIndex : TERMINAL_ZOOM_LEVELS.indexOf(100);
+  const targetIndex = Math.max(0, Math.min(TERMINAL_ZOOM_LEVELS.length - 1, safeIndex + Number(delta || 0)));
+  setTerminalZoom(TERMINAL_ZOOM_LEVELS[targetIndex], options);
+}
+
+function resetTerminalZoom(options = {}) {
+  setTerminalZoom(100, options);
+}
 
 function ensureSchedulerStore() {
   if (!runtimeConfig) return;
@@ -717,7 +838,7 @@ function startBootOverlayTicker() {
 
 function showBootOverlay(detail = '', options = {}) {
   if (!els.appLoadingOverlay) return;
-  const title = options.title || 'Preparando Zenoterm';
+  const title = options.title || 'Preparando ZenoRemote';
   if (els.appLoadingTitle) els.appLoadingTitle.textContent = title;
   bootOverlayLockedText = options.lockDetail ? String(detail || '').trim() : '';
   if (els.appLoadingDetail) {
@@ -733,7 +854,7 @@ function showBootOverlay(detail = '', options = {}) {
 function updateBootOverlay(detail = '', options = {}) {
   if (!els.appLoadingOverlay) return;
   showBootOverlay(detail, {
-    title: options.title || els.appLoadingTitle?.textContent || 'Preparando Zenoterm',
+    title: options.title || els.appLoadingTitle?.textContent || 'Preparando ZenoRemote',
     lockDetail: options.lockDetail !== false,
   });
 }
@@ -752,7 +873,12 @@ function hideBootOverlay(options = {}) {
 function ensureAuthenticatedUi() {
   const hidden = !(runtimeConfig?.auth?.login_required) || authStatus.authenticated;
   els.loginScreen.classList.toggle('hidden', hidden);
-  if (!hidden) hideBootOverlay();
+  if (!hidden) {
+    hideBootOverlay();
+    stopPageWarmupRefresh();
+  } else {
+    startPageWarmupRefresh();
+  }
   applyFeatureVisibility();
 }
 
@@ -801,7 +927,7 @@ function newAdministrationUser() {
     display_name: 'Nuevo usuario',
     role: 'no_docker',
     enabled: true,
-    explorer_entries: [{ path: runtimeConfig?.workspace_dir || '', label: 'Proyecto Zenoterm', access: 'read_only' }],
+    explorer_entries: [{ path: runtimeConfig?.workspace_dir || '', label: 'Proyecto ZenoRemote', access: 'read_only' }],
     new_password: 'user',
   };
 }
@@ -812,14 +938,121 @@ function administrationRoleMeta(roleId) {
 }
 
 function visibleViewName() {
-  if (!els.mainView?.classList.contains('hidden')) return 'main';
+  if (!els.homeView?.classList.contains('hidden')) return 'home';
+  if (!els.mainView?.classList.contains('hidden')) return 'terminal';
   if (!els.configView?.classList.contains('hidden')) return 'config';
   if (!els.adminView?.classList.contains('hidden')) return 'administration';
   if (!els.scriptsView?.classList.contains('hidden')) return 'scripts';
   if (!els.dockerView?.classList.contains('hidden')) return 'docker';
   if (!els.schedulerView?.classList.contains('hidden')) return 'scheduler';
   if (!els.explorerView?.classList.contains('hidden')) return 'explorer';
-  return 'main';
+  return 'terminal';
+}
+
+function updateTopUserBadge() {
+  const authenticated = !!(authStatus?.authenticated || !(runtimeConfig?.auth?.login_required));
+  const user = currentUser();
+  if (els.topUserName) els.topUserName.textContent = user?.display_name || user?.username || 'Usuario';
+  if (els.topUserBadge) els.topUserBadge.classList.toggle('hidden', !(authenticated && user));
+}
+
+function updateTopNavigationState() {
+  const active = visibleViewName();
+  const map = {
+    home: els.homePageBtn,
+    terminal: els.terminalPageBtn,
+    scripts: els.scriptsPageBtn,
+    docker: els.dockerPageBtn,
+    scheduler: els.schedulerPageBtn,
+    explorer: els.explorerPageBtn,
+    config: els.configBtn,
+    administration: els.adminPageBtn,
+  };
+  Object.entries(map).forEach(([view, button]) => {
+    if (!button) return;
+    const isActive = view === active;
+    button.classList.toggle('is-active', isActive);
+    button.setAttribute('aria-current', isActive ? 'page' : 'false');
+  });
+}
+
+function pageWarmIsFresh(name, ttlMs = PAGE_WARMUP_REFRESH_MS) {
+  return (Date.now() - Number(pageWarmCache[name] || 0)) < ttlMs;
+}
+
+function markPageWarmed(name) {
+  pageWarmCache[name] = Date.now();
+}
+
+async function preloadAllCategoryViews(options = {}) {
+  const silent = options.silent !== false;
+  const includeExplorer = options.includeExplorer !== false;
+  const includeSchedulerLogs = options.includeSchedulerLogs !== false;
+  const tasks = [];
+  try {
+    renderScriptEditor();
+    renderScriptsPanel();
+    markPageWarmed('scripts');
+  } catch (error) {}
+  try {
+    populateConfigView();
+    markPageWarmed('config');
+  } catch (error) {}
+  try {
+    renderAdministration();
+    markPageWarmed('administration');
+  } catch (error) {}
+  markPageWarmed('home');
+
+  if (userCan('use_docker') && (!silent || !pageWarmIsFresh('docker'))) {
+    tasks.push(refreshDockerOverview({ silent: true }).then(() => markPageWarmed('docker')).catch(() => {}));
+  }
+  if (userCan('manage_scheduler') && (!silent || !pageWarmIsFresh('scheduler'))) {
+    tasks.push(
+      refreshSchedulerState({ silent: true })
+        .then(async () => {
+          if (includeSchedulerLogs) {
+            const previousSeq = schedulerLogLastSeq;
+            try {
+              schedulerLogLastSeq = 0;
+              await loadSchedulerLogTab(selectedSchedulerLogTabId || 'scheduler-system', { reset: true });
+            } catch (error) {
+            } finally {
+              schedulerLogLastSeq = previousSeq;
+              if (els.schedulerLogConsole && visibleViewName() !== 'scheduler') els.schedulerLogConsole.innerHTML = '';
+            }
+          }
+          markPageWarmed('scheduler');
+        })
+        .catch(() => {})
+    );
+  }
+  if (includeExplorer && userCan('use_explorer') && (!silent || !pageWarmIsFresh('explorer'))) {
+    tasks.push(loadExplorerPath(explorerState.currentPath || runtimeConfig?.workspace_dir || '').then(() => markPageWarmed('explorer')).catch(() => {}));
+  }
+  await Promise.allSettled(tasks);
+}
+
+function stopPageWarmupRefresh() {
+  if (pageWarmupTimer) window.clearInterval(pageWarmupTimer);
+  pageWarmupTimer = null;
+}
+
+function startPageWarmupRefresh() {
+  stopPageWarmupRefresh();
+  const authenticated = !!(authStatus?.authenticated || !(runtimeConfig?.auth?.login_required));
+  if (!authenticated) return;
+  pageWarmupTimer = window.setInterval(() => {
+    preloadAllCategoryViews({ silent: true, includeSchedulerLogs: false, includeExplorer: false }).catch(() => {});
+  }, PAGE_WARMUP_REFRESH_MS);
+}
+
+function refreshHomeCardsVisibility() {
+  document.querySelectorAll('[data-home-target]').forEach((button) => {
+    const permission = button.dataset.requires;
+    const allowed = !permission || userCan(permission) || permission === 'authenticated';
+    button.classList.toggle('hidden', !allowed);
+  });
 }
 
 function absorbRuntimeConfig(config) {
@@ -849,22 +1082,28 @@ async function reloadRuntimeConfig() {
   updateExplorerClipboardInfo();
   renderExplorerPreview();
   renderAdministration();
+  refreshHomeCardsVisibility();
+  updateTopUserBadge();
   applyFeatureVisibility();
 }
 
 function applyFeatureVisibility() {
   const authenticated = !!(authStatus?.authenticated || !(runtimeConfig?.auth?.login_required));
   const view = visibleViewName();
-  const onMain = view === 'main';
-  const showWhenMain = (el, allowed) => { if (!el) return; el.classList.toggle('hidden', !(onMain && authenticated && allowed)); };
-  showWhenMain(els.configBtn, authenticated);
-  showWhenMain(els.adminPageBtn, userCan('manage_administration'));
-  showWhenMain(els.scriptsPageBtn, userCan('manage_scripts'));
-  showWhenMain(els.dockerPageBtn, userCan('use_docker'));
-  showWhenMain(els.schedulerPageBtn, userCan('manage_scheduler'));
-  showWhenMain(els.explorerPageBtn, userCan('use_explorer'));
-  if (els.backBtn) els.backBtn.classList.toggle('hidden', onMain || !authenticated);
+  const showWhenAllowed = (el, allowed) => { if (!el) return; el.classList.toggle('hidden', !(authenticated && allowed)); };
+  showWhenAllowed(els.homePageBtn, true);
+  showWhenAllowed(els.terminalPageBtn, true);
+  showWhenAllowed(els.configBtn, authenticated);
+  showWhenAllowed(els.adminPageBtn, userCan('manage_administration'));
+  showWhenAllowed(els.scriptsPageBtn, userCan('manage_scripts'));
+  showWhenAllowed(els.dockerPageBtn, userCan('use_docker'));
+  showWhenAllowed(els.schedulerPageBtn, userCan('manage_scheduler'));
+  showWhenAllowed(els.explorerPageBtn, userCan('use_explorer'));
+  if (els.backBtn) els.backBtn.classList.add('hidden');
   if (els.logoutBtn) els.logoutBtn.classList.toggle('hidden', !authenticated && !!runtimeConfig?.auth?.login_required);
+  updateTopUserBadge();
+  refreshHomeCardsVisibility();
+  updateTopNavigationState();
 
   const scopes = authenticated ? allowedNewTabScopes() : [];
   const labels = { local: 'Local', remote: 'Remoto', docker: 'Docker' };
@@ -955,7 +1194,7 @@ function bindAdministrationEditorEvents() {
         const meta = administrationRoleMeta(role);
         user.role_label = meta?.label || role;
         if (role === 'administrator') user.explorer_entries = [];
-        else if (!Array.isArray(user.explorer_entries) || !user.explorer_entries.length) user.explorer_entries = [{ path: runtimeConfig?.workspace_dir || '', label: 'Proyecto Zenoterm', access: 'read_only' }];
+        else if (!Array.isArray(user.explorer_entries) || !user.explorer_entries.length) user.explorer_entries = [{ path: runtimeConfig?.workspace_dir || '', label: 'Proyecto ZenoRemote', access: 'read_only' }];
         renderAdministration();
         return;
       }
@@ -1022,7 +1261,7 @@ function renderAdministrationEditor() {
         </div>
         <div class="credential-note">Define qué carpetas o ficheros puede ver y si son solo lectura o lectura/escritura.</div>
         <div class="admin-explorer-list">
-          ${((Array.isArray(user.explorer_entries) ? user.explorer_entries : []).length ? user.explorer_entries : [{ path: runtimeConfig?.workspace_dir || '', label: 'Proyecto Zenoterm', access: 'read_only' }]).map((entry, index) => `
+          ${((Array.isArray(user.explorer_entries) ? user.explorer_entries : []).length ? user.explorer_entries : [{ path: runtimeConfig?.workspace_dir || '', label: 'Proyecto ZenoRemote', access: 'read_only' }]).map((entry, index) => `
             <div class="admin-explorer-row">
               <label class="field"><span>Etiqueta</span><input type="text" data-admin-entry-index="${index}" data-admin-entry-field="label" value="${escapeHtml(entry.label || '')}" placeholder="Ej. Proyecto, Logs, Descargas"></label>
               <label class="field"><span>Ruta</span><input type="text" data-admin-entry-index="${index}" data-admin-entry-field="path" value="${escapeHtml(entry.path || '')}" placeholder="Ruta absoluta del host"></label>
@@ -1103,6 +1342,7 @@ async function saveAdministrationUsers() {
 
 function showAdministrationView() {
   if (!userCan('manage_administration')) return;
+  els.homeView.classList.add('hidden');
   els.mainView.classList.add('hidden');
   els.configView.classList.add('hidden');
   els.adminView.classList.remove('hidden');
@@ -1116,9 +1356,8 @@ function showAdministrationView() {
 }
 
 function setTopSubtitle() {
-  const base = 'Terminal web con tabs, alta automática al crear y configuración global separada.';
-  const user = currentUser();
-  els.appSubtitle.textContent = user ? `${base} · ${user.display_name || user.username} · ${user.role_label || user.role || 'Usuario'}` : base;
+  const base = 'Acceso unificado a terminales, scripts, Docker, Scheduler y Explorer.';
+  if (els.appSubtitle) els.appSubtitle.textContent = base;
 }
 
 function populateNewTabTargetOsOptions() {
@@ -1701,13 +1940,16 @@ function pushTerminalResize(tab) {
 }
 
 function createTerminalForPane(host, scrollback) {
+  const termZoomTuning = terminalFontTuningForZoom();
   const term = new Terminal({
     cursorBlink: true,
     convertEol: true,
     scrollback: Number(scrollback),
-    fontFamily: 'Cascadia Mono, Consolas, Menlo, monospace',
-    fontSize: 15,
-    lineHeight: 1.2,
+    fontFamily: 'Consolas, "Cascadia Mono", "Cascadia Code", Menlo, monospace',
+    fontSize: terminalFontSize,
+    lineHeight: termZoomTuning.lineHeight,
+    fontWeight: termZoomTuning.fontWeight,
+    fontWeightBold: termZoomTuning.fontWeightBold,
     theme: {
       background: '#090304',
       foreground: '#f7edf0',
@@ -1810,6 +2052,15 @@ function bindTerminalKeyboardShortcuts(tab) {
     if ((accel && event.shiftKey && key === 'v') || (event.shiftKey && !event.ctrlKey && !event.metaKey && key === 'insert')) {
       return stopAndRun(() => pasteIntoTab(tab));
     }
+    if (accel && !event.shiftKey && (key === '+' || key === '=' || key === 'add')) {
+      return stopAndRun(() => adjustTerminalZoom(1, { focusActive: tab.id === activeTabId }));
+    }
+    if (accel && !event.shiftKey && (key === '-' || key === 'subtract')) {
+      return stopAndRun(() => adjustTerminalZoom(-1, { focusActive: tab.id === activeTabId }));
+    }
+    if (accel && !event.shiftKey && key === '0') {
+      return stopAndRun(() => resetTerminalZoom({ focusActive: tab.id === activeTabId }));
+    }
     return true;
   });
 }
@@ -1889,8 +2140,15 @@ function renameTab(tabId) {
   if (tab.id === activeTabId) renderTerminalMeta();
 }
 
+function renderWorkspaceEmptyState() {
+  const empty = !tabs.length;
+  if (els.terminalStack) els.terminalStack.classList.toggle('empty-state-visible', empty);
+  if (els.workspaceEmptyState) els.workspaceEmptyState.setAttribute('aria-hidden', empty ? 'false' : 'true');
+}
+
 function renderTabs() {
   hideTabContextMenu();
+  renderWorkspaceEmptyState();
   els.tabsList.innerHTML = '';
   tabs.forEach((tab) => {
     const chip = document.createElement('div');
@@ -1921,6 +2179,7 @@ function updateActiveTabState() {
 
 function activateTab(tabId) {
   activeTabId = tabId;
+  renderWorkspaceEmptyState();
   tabs.forEach((tab) => tab.pane.classList.toggle('active', tab.id === tabId));
   renderTabs();
   renderCredentialFields();
@@ -2122,6 +2381,7 @@ function closeTab(tabId) {
   tab.pane.remove();
   tabs.splice(index, 1);
   if (!tabs.length) {
+    activeTabId = null;
     renderTabs();
     renderTerminalMeta();
     els.credentialFields.innerHTML = '';
@@ -2188,16 +2448,16 @@ function writeImportSummaryToTerminal(tab, data, overwrite) {
   const details = result.details || {};
   const lines = [];
   lines.push('');
-  lines.push(`[Zenoterm] Importación de carpeta ${overwrite ? 'con reemplazo' : 'sin reemplazo'}`);
-  lines.push(`[Zenoterm] Copiados: ${result.copied || 0} | Reemplazados: ${result.overwritten || 0} | Omitidos: ${result.skipped || 0}`);
+  lines.push(`[ZenoRemote] Importación de carpeta ${overwrite ? 'con reemplazo' : 'sin reemplazo'}`);
+  lines.push(`[ZenoRemote] Copiados: ${result.copied || 0} | Reemplazados: ${result.overwritten || 0} | Omitidos: ${result.skipped || 0}`);
 
   const appendGroup = (label, items) => {
     const list = Array.isArray(items) ? items : [];
     if (!list.length) return;
     const preview = list.slice(0, 8);
-    preview.forEach((item) => lines.push(`[Zenoterm] ${label}: ${item}`));
+    preview.forEach((item) => lines.push(`[ZenoRemote] ${label}: ${item}`));
     if (list.length > preview.length) {
-      lines.push(`[Zenoterm] ${label}: ... y ${list.length - preview.length} más`);
+      lines.push(`[ZenoRemote] ${label}: ... y ${list.length - preview.length} más`);
     }
   };
 
@@ -2375,9 +2635,13 @@ async function handleLogin(event) {
     els.loginPassword.value = '';
     autoOpenedSessionTokens.clear();
     sessionAutoOpenInProgress = false;
-    showBootOverlay('Entrando y preparando tu espacio…', { title: 'Accediendo a Zenoterm', lockDetail: false });
+    showBootOverlay('Entrando y preparando tu espacio…', { title: 'Accediendo a ZenoRemote', lockDetail: false });
     await autoOpenDefaultSessionTabs({ showLoadingOverlay: true });
-    updateBootOverlay('Todo listo. Abriendo tu entorno…', { title: 'Bienvenido', lockDetail: true });
+    updateBootOverlay('Precargando áreas y dejando todo fluido…', { title: 'Optimizando tu entorno', lockDetail: false });
+    await preloadAllCategoryViews({ silent: false, includeSchedulerLogs: true, includeExplorer: true });
+    startPageWarmupRefresh();
+    showHomeView();
+    updateBootOverlay('Todo listo. Dejando Home listo y Terminal precargada…', { title: 'Bienvenido', lockDetail: true });
     await delay(260);
     hideBootOverlay();
   } catch (error) {
@@ -2401,6 +2665,7 @@ async function handleLogout() {
   }
   autoOpenedSessionTokens.clear();
   sessionAutoOpenInProgress = false;
+  stopPageWarmupRefresh();
   renderTabs();
   renderTerminalMeta();
 }
@@ -2470,7 +2735,7 @@ function makePresetCard(preset, index) {
         <strong>${escapeHtml(effectivePreset.name || `Terminal ${index + 1}`)}</strong>
         ${removeButton}
       </div>
-      ${isDetectedLocal ? '<div class="info-inline">Esta terminal local se detecta automáticamente desde el host actual. Aquí solo ajustas su comportamiento dentro de Zenoterm.</div>' : ''}
+      ${isDetectedLocal ? '<div class="info-inline">Esta terminal local se detecta automáticamente desde el host actual. Aquí solo ajustas su comportamiento dentro de ZenoRemote.</div>' : ''}
       ${selectedConfigSessionId !== 'general' ? '<div class="info-inline">Estás editando la configuración personalizada de una sesión. Si limpias el override, volverá a usar la configuración general.</div>' : ''}
       <div class="preset-grid">
         <label class="field"><span>Nombre</span><input data-preset="name" type="text" value="${escapeHtml(effectivePreset.name || '')}"></label>
@@ -2676,6 +2941,7 @@ async function saveGlobalConfig() {
 
 function showConfigView() {
   if (!authStatus?.authenticated && !!runtimeConfig?.auth?.login_required) return;
+  els.homeView.classList.add('hidden');
   els.mainView.classList.add('hidden');
   els.configView.classList.remove('hidden');
   els.adminView.classList.add('hidden');
@@ -2690,6 +2956,7 @@ function showConfigView() {
 
 function showScriptsView() {
   if (!userCan('manage_scripts')) return;
+  els.homeView.classList.add('hidden');
   els.mainView.classList.add('hidden');
   els.configView.classList.add('hidden');
   els.adminView.classList.add('hidden');
@@ -2702,7 +2969,8 @@ function showScriptsView() {
   applyFeatureVisibility();
 }
 
-function showMainView() {
+function showTerminalView() {
+  els.homeView.classList.add('hidden');
   els.mainView.classList.remove('hidden');
   els.configView.classList.add('hidden');
   els.adminView.classList.add('hidden');
@@ -2712,6 +2980,25 @@ function showMainView() {
   els.schedulerView.classList.add('hidden');
   stopSchedulerPolling();
   renderScriptsPanel();
+  applyFeatureVisibility();
+}
+
+function showMainView() {
+  showHomeView();
+}
+
+function showHomeView() {
+  if (!authStatus?.authenticated && !!runtimeConfig?.auth?.login_required) return;
+  els.homeView.classList.remove('hidden');
+  els.mainView.classList.add('hidden');
+  els.configView.classList.add('hidden');
+  els.adminView.classList.add('hidden');
+  els.scriptsView.classList.add('hidden');
+  els.dockerView.classList.add('hidden');
+  els.explorerView.classList.add('hidden');
+  els.schedulerView.classList.add('hidden');
+  stopSchedulerPolling();
+  refreshHomeCardsVisibility();
   applyFeatureVisibility();
 }
 
@@ -2729,7 +3016,7 @@ async function createAliasForActiveTab() {
   els.aliasMessage.textContent = '';
   try {
     await fetchJson('/api/aliases', { method: 'POST', body: JSON.stringify({ target_id: tab.targetId, alias_name, command_text, folder, group: folder }) });
-    els.aliasMessage.textContent = 'Alias guardado en Zenoterm.';
+    els.aliasMessage.textContent = 'Alias guardado en ZenoRemote.';
     els.aliasNameInput.value = '';
     els.aliasCommandInput.value = '';
     if (els.aliasFolderInput) els.aliasFolderInput.value = '';
@@ -3156,6 +3443,7 @@ function renderDockerManagement() {
 
 function showDockerView() {
   if (!userCan('use_docker')) return;
+  els.homeView.classList.add('hidden');
   els.mainView.classList.add('hidden');
   els.configView.classList.add('hidden');
   els.adminView.classList.add('hidden');
@@ -3164,7 +3452,9 @@ function showDockerView() {
   els.schedulerView.classList.add('hidden');
   els.dockerView.classList.remove('hidden');
   stopSchedulerPolling();
-  refreshDockerOverview({ silent: false }).catch(() => renderDockerManagement());
+  renderDockerManagement();
+  if (pageWarmIsFresh('docker')) setDockerMessage('Vista Docker precargada.');
+  else refreshDockerOverview({ silent: false }).catch(() => renderDockerManagement());
   applyFeatureVisibility();
 }
 
@@ -3757,6 +4047,7 @@ function startSchedulerPolling() {
 
 function showSchedulerView() {
   if (!userCan('manage_scheduler')) return;
+  els.homeView.classList.add('hidden');
   els.mainView.classList.add('hidden');
   els.configView.classList.add('hidden');
   els.adminView.classList.add('hidden');
@@ -3764,7 +4055,15 @@ function showSchedulerView() {
   els.dockerView.classList.add('hidden');
   els.explorerView.classList.add('hidden');
   els.schedulerView.classList.remove('hidden');
-  refreshSchedulerState({ silent: true }).then(() => loadSchedulerLogTab(selectedSchedulerLogTabId || 'scheduler-system', { reset: true })).catch((error) => setSchedulerMessage(error.message || 'No se pudo abrir Scheduler.'));
+  if (pageWarmIsFresh('scheduler')) {
+    renderSchedulerStatusCards();
+    renderSchedulerTaskList();
+    renderSchedulerEditor();
+    renderSchedulerLogTabs();
+    loadSchedulerLogTab(selectedSchedulerLogTabId || 'scheduler-system', { reset: true }).catch(() => {});
+  } else {
+    refreshSchedulerState({ silent: true }).then(() => loadSchedulerLogTab(selectedSchedulerLogTabId || 'scheduler-system', { reset: true })).catch((error) => setSchedulerMessage(error.message || 'No se pudo abrir Scheduler.'));
+  }
   startSchedulerPolling();
   applyFeatureVisibility();
 }
@@ -3772,6 +4071,7 @@ function showSchedulerView() {
 
 function showExplorerView() {
   if (!userCan('use_explorer')) return;
+  els.homeView.classList.add('hidden');
   els.mainView.classList.add('hidden');
   els.configView.classList.add('hidden');
   els.adminView.classList.add('hidden');
@@ -3781,7 +4081,7 @@ function showExplorerView() {
   stopSchedulerPolling();
   els.explorerView.classList.remove('hidden');
   initExplorerSplitResize();
-  loadExplorerPath(explorerState.currentPath || runtimeConfig?.workspace_dir || '').catch((error) => setExplorerMessage(error.message || 'No se pudo abrir Explorer.'));
+  if (!pageWarmIsFresh('explorer')) loadExplorerPath(explorerState.currentPath || runtimeConfig?.workspace_dir || '').catch((error) => setExplorerMessage(error.message || 'No se pudo abrir Explorer.'));
   applyFeatureVisibility();
 }
 
@@ -3791,13 +4091,29 @@ function bindStaticEvents() {
   staticEventsBound = true;
   els.loginForm?.addEventListener('submit', handleLogin);
   els.logoutBtn?.addEventListener('click', handleLogout);
+  els.terminalZoomOutBtn?.addEventListener('click', () => adjustTerminalZoom(-1));
+  els.terminalZoomResetBtn?.addEventListener('click', () => resetTerminalZoom());
+  els.terminalZoomInBtn?.addEventListener('click', () => adjustTerminalZoom(1));
+  els.homePageBtn?.addEventListener('click', showHomeView);
+  els.terminalPageBtn?.addEventListener('click', showTerminalView);
   els.configBtn?.addEventListener('click', showConfigView);
   els.adminPageBtn?.addEventListener('click', showAdministrationView);
   els.scriptsPageBtn?.addEventListener('click', showScriptsView);
   els.dockerPageBtn?.addEventListener('click', showDockerView);
   els.schedulerPageBtn?.addEventListener('click', showSchedulerView);
   els.explorerPageBtn?.addEventListener('click', showExplorerView);
-  els.backBtn?.addEventListener('click', showMainView);
+  els.backBtn?.addEventListener('click', showTerminalView);
+  document.querySelectorAll('[data-home-target]').forEach((button) => button.addEventListener('click', () => {
+    const target = button.dataset.homeTarget;
+    if (target === 'home') showHomeView();
+    else if (target === 'terminal') showTerminalView();
+    else if (target === 'scripts') showScriptsView();
+    else if (target === 'docker') showDockerView();
+    else if (target === 'scheduler') showSchedulerView();
+    else if (target === 'explorer') showExplorerView();
+    else if (target === 'config') showConfigView();
+    else if (target === 'administration') showAdministrationView();
+  }));
 }
 
 function bindEvents() {
@@ -4084,7 +4400,7 @@ async function autoOpenDefaultSessionTabs(options = {}) {
   const defaults = sessionDefaultTargets();
   if (!defaults.length) {
     autoOpenedSessionTokens.add(sessionToken);
-    if (showLoadingOverlay) updateBootOverlay('No hay pestañas automáticas en la sesión. Dejándolo listo…', { title: 'Preparando Zenoterm', lockDetail: true });
+    if (showLoadingOverlay) updateBootOverlay('No hay pestañas automáticas en la sesión. Dejándolo listo…', { title: 'Preparando ZenoRemote', lockDetail: true });
     return [];
   }
   sessionAutoOpenInProgress = true;
@@ -4138,6 +4454,10 @@ async function loadBootstrap() {
   ensureAuthenticatedUi();
   if (authStatus.authenticated || !(runtimeConfig?.auth?.login_required)) {
     await autoOpenDefaultSessionTabs({ showLoadingOverlay: postLoginBoot });
+    if (postLoginBoot) updateBootOverlay('Precargando vistas para que entren al instante…', { title: 'Optimizando ZenoRemote', lockDetail: false });
+    await preloadAllCategoryViews({ silent: false, includeSchedulerLogs: true, includeExplorer: true });
+    startPageWarmupRefresh();
+    showHomeView();
     if (postLoginBoot) {
       updateBootOverlay('Todo listo. Ya puedes empezar.', { title: 'Bienvenido', lockDetail: true });
       await delay(240);
@@ -4151,6 +4471,9 @@ async function loadBootstrap() {
 bindStaticEvents();
 
 bindEvents();
+updateTerminalZoomUi();
+renderWorkspaceEmptyState();
+renderTerminalMeta();
 
 loadBootstrap().catch((error) => {
   hideBootOverlay();
