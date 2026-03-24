@@ -1,12 +1,12 @@
 # Zenoterm Remote Tabs
 
-Zenoterm Remote Tabs es una terminal web para Windows con pestañas múltiples, targets locales y remotos, autenticación simple de acceso al panel y soporte para shells locales y sesiones SSH interactivas.
+Zenoterm Remote Tabs es una terminal web pensada para el host actual: al arrancar detecta automáticamente el sistema operativo donde corre y construye el inventario real de terminales locales disponibles, manteniendo además targets remotos por SSH.
 
 Esta versión añade estas capacidades principales:
 
-- targets locales por defecto para PowerShell moderna, PowerShell 5.1, CMD, Git Bash y WSL2;
+- detección automática de terminales locales reales del host actual (por ejemplo PowerShell/CMD/Git Bash/WSL en Windows, o shells POSIX en Linux/macOS);
 - detección automática de todas las distribuciones WSL2 instaladas;
-- targets remotos por SSH **por contraseña** y **por clave pública/privada** para cada familia de shell local detectada;
+- dos presets remotos base por SSH: uno **por contraseña** y otro **por clave pública/privada**, ambos editables;
 - pestañas con nombre libre;
 - credenciales SSH introducidas en la propia web por pestaña;
 - columna izquierda desplazable para que siempre se vean las secciones inferiores;
@@ -49,6 +49,8 @@ La web se divide en:
 
 ### Targets locales
 
+Los targets locales ya no se guardan como presets estáticos en el JSON. Se detectan en cada arranque según el host actual y solo se persisten sus overrides de Zenoterm (nombre visible, comando de arranque y comandos iniciales).
+
 Zenoterm crea automáticamente estos targets si existen en el sistema:
 
 - Local: PowerShell 7
@@ -61,12 +63,12 @@ Zenoterm crea automáticamente estos targets si existen en el sistema:
 
 ### Targets remotos
 
-Para **cada shell local detectada**, Zenoterm crea automáticamente dos targets remotos:
+Zenoterm trae de base solo dos presets remotos editables:
 
-- `Remote SSH User/Pass: <shell>`
-- `Remote SSH Public/Private key: <shell>`
+- `Remote: SSH Remote · User/Pass`
+- `Remote: SSH Remote · Public/Private Key`
 
-Esos targets no llevan host ni usuario cerrados. Se rellenan en la propia web, en la pestaña activa.
+Ambos son plantillas iniciales. Desde configuración puedes cambiarles el sistema operativo target, la shell base, el comando de arranque y duplicarlos o crear más presets remotos si lo necesitas.
 
 ## Cómo está montado el modo remoto
 
@@ -148,18 +150,18 @@ Contiene las dependencias Python del proyecto.
 - selecciona `Local: WSL2 Ubuntu`;
 - pulsa `Conectar`.
 
-### Abrir servidor Windows remoto con PowerShell 5.1 por contraseña
+### Abrir servidor remoto por contraseña
 
-- crea una pestaña llamada `WinSrv PS5`;
-- selecciona `Remote SSH User/Pass: PowerShell 5.1`;
+- crea una pestaña llamada `Servidor SSH`;
+- selecciona `Remote: SSH Remote · User/Pass`;
 - escribe host, puerto y usuario;
 - escribe la contraseña efímera;
 - pulsa `Conectar`.
 
-### Abrir servidor remoto por clave privada con CMD
+### Abrir servidor remoto por clave privada
 
-- crea una pestaña llamada `Jumpbox CMD`;
-- selecciona `Remote SSH Public/Private key: CMD`;
+- crea una pestaña llamada `Jumpbox SSH`;
+- selecciona `Remote: SSH Remote · Public/Private Key`;
 - rellena host, puerto y usuario;
 - escribe la ruta local de la clave privada;
 - añade passphrase si aplica;

@@ -9,15 +9,6 @@
   <link rel="stylesheet" href="/web/style.css?v=scheduler-1">
 </head>
 <body>
-  <script>
-    (function () {
-      try {
-        if (window.sessionStorage && sessionStorage.getItem('zenoterm.postLoginBoot') === '1') {
-          document.documentElement.classList.add('boot-after-login');
-        }
-      } catch (error) {}
-    })();
-  </script>
   <div id="loginScreen" class="overlay hidden">
     <form id="loginForm" class="login-card">
       <h1>Zenoterm</h1>
@@ -35,21 +26,6 @@
     </form>
   </div>
 
-  <div id="appLoadingOverlay" class="app-loading-overlay preboot" aria-live="polite" aria-busy="true">
-    <div class="app-loading-backdrop" aria-hidden="true">
-      <span class="app-loading-blob blob-a"></span>
-      <span class="app-loading-blob blob-b"></span>
-      <span class="app-loading-blob blob-c"></span>
-    </div>
-    <div class="app-loading-card">
-      <div class="app-loading-badge">Cargando sesión</div>
-      <h2 id="appLoadingTitle">Preparando Zenoterm</h2>
-      <p id="appLoadingDetail">Montando pestañas, conectando terminales y dejando todo listo…</p>
-      <div class="app-loading-progress" aria-hidden="true"><span></span></div>
-      <div class="app-loading-dots" aria-hidden="true"><span></span><span></span><span></span></div>
-    </div>
-  </div>
-
   <div class="app-shell">
     <header class="topbar">
       <div class="brand">
@@ -60,6 +36,10 @@
         </div>
       </div>
       <div class="top-actions">
+        <label class="top-session-picker">
+          <span>Sesión</span>
+          <select id="activeSessionSelect"></select>
+        </label>
         <button id="scriptsPageBtn" type="button">Scripts</button>
         <button id="dockerPageBtn" type="button">Docker Management</button>
         <button id="schedulerPageBtn" type="button">Scheduler</button>
@@ -74,33 +54,6 @@
     <main id="mainView" class="layout">
       <aside class="sidebar-scroll">
         <div class="sidebar">
-          <section class="panel accordion-panel expanded" data-accordion-section="sessions">
-            <button type="button" class="panel-toggle" data-accordion-toggle="sessions" aria-expanded="true">
-              <span>Sesiones</span>
-              <span class="panel-toggle-icon" aria-hidden="true">▾</span>
-            </button>
-            <div class="panel-body session-panel-body">
-              <label class="field session-field">
-                <span>Sesión activa</span>
-                <select id="activeSessionSelect"></select>
-              </label>
-              <label class="field session-field session-new-name-field">
-                <span>Nueva sesión</span>
-                <input id="sidebarNewSessionNameInput" type="text" placeholder="Ej. Proyecto Python, Streaming, Deploy">
-              </label>
-              <div class="inline-actions session-actions">
-                <button id="sidebarAddSessionBtn" type="button" class="config-action-btn"><span class="session-btn-icon" aria-hidden="true">＋</span><span class="session-btn-label">Añadir sesión</span></button>
-                <button id="sidebarRemoveSessionBtn" type="button" class="config-action-btn danger-btn"><span class="session-btn-icon" aria-hidden="true">🗑</span><span class="session-btn-label">Eliminar sesión activa</span></button>
-                <button id="sidebarSetDefaultSessionBtn" type="button" class="config-action-btn"><span class="session-btn-icon" aria-hidden="true">★</span><span class="session-btn-label">Usar actual por defecto</span></button>
-                <button id="sidebarClearDefaultSessionBtn" type="button" class="config-action-btn"><span class="session-btn-icon" aria-hidden="true">✕</span><span class="session-btn-label">Quitar predeterminada</span></button>
-              </div>
-              <div class="session-meta-block">
-                <div id="sidebarSessionStatus" class="credential-note session-status-card"><strong>Predeterminada</strong>: ninguna</div>
-                <div id="sidebarSessionMessage" class="info-inline session-message-card"></div>
-              </div>
-            </div>
-          </section>
-
           <section class="panel accordion-panel expanded" data-accordion-section="new-tab">
             <button type="button" class="panel-toggle" data-accordion-toggle="new-tab" aria-expanded="true">
               <span>Crear nueva pestaña</span>
@@ -697,16 +650,10 @@
       if (!response.ok || !data.authenticated) {
         throw new Error(data.message || data.error || 'No se pudo iniciar sesión.');
       }
-      try {
-        if (window.sessionStorage) sessionStorage.setItem('zenoterm.postLoginBoot', '1');
-      } catch (error) {}
       overlay.classList.add('hidden');
       passwordInput.value = '';
       window.location.reload();
     } catch (error) {
-      try {
-        if (window.sessionStorage) sessionStorage.removeItem('zenoterm.postLoginBoot');
-      } catch (storageError) {}
       message.textContent = error && error.message ? error.message : 'Error de login';
     } finally {
       submitBtn.disabled = false;

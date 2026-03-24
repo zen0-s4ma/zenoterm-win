@@ -14,13 +14,6 @@ const els = {
   explorerPageBtn: document.getElementById('explorerPageBtn'),
   backBtn: document.getElementById('backBtn'),
   activeSessionSelect: document.getElementById('activeSessionSelect'),
-  sidebarNewSessionNameInput: document.getElementById('sidebarNewSessionNameInput'),
-  sidebarAddSessionBtn: document.getElementById('sidebarAddSessionBtn'),
-  sidebarRemoveSessionBtn: document.getElementById('sidebarRemoveSessionBtn'),
-  sidebarSetDefaultSessionBtn: document.getElementById('sidebarSetDefaultSessionBtn'),
-  sidebarClearDefaultSessionBtn: document.getElementById('sidebarClearDefaultSessionBtn'),
-  sidebarSessionStatus: document.getElementById('sidebarSessionStatus'),
-  sidebarSessionMessage: document.getElementById('sidebarSessionMessage'),
   mainView: document.getElementById('mainView'),
   configView: document.getElementById('configView'),
   adminView: document.getElementById('adminView'),
@@ -29,9 +22,6 @@ const els = {
   schedulerView: document.getElementById('schedulerView'),
   explorerView: document.getElementById('explorerView'),
   appSubtitle: document.getElementById('appSubtitle'),
-  appLoadingOverlay: document.getElementById('appLoadingOverlay'),
-  appLoadingTitle: document.getElementById('appLoadingTitle'),
-  appLoadingDetail: document.getElementById('appLoadingDetail'),
 
   newTabName: document.getElementById('newTabName'),
   newTabScopeSelect: document.getElementById('newTabScopeSelect'),
@@ -177,20 +167,7 @@ let activeTabId = null;
 let selectedPresetIndex = 0;
 let selectedScriptIndex = 0;
 let selectedConfigSessionId = 'general';
-const autoOpenedSessionTokens = new Set();
-let sessionAutoOpenInProgress = false;
-const NO_SESSION_AUTO_TOKEN = '__no_session__';
-const POST_LOGIN_BOOT_KEY = 'zenoterm.postLoginBoot';
-const bootOverlayMessages = [
-  'Cargando interfaz y preferencias…',
-  'Montando pestañas de la sesión…',
-  'Conectando terminales en segundo plano…',
-  'Aplicando comandos de arranque…',
-  'Dejándolo todo listo para usar…',
-];
-let bootOverlayTicker = null;
-let bootOverlayMessageIndex = 0;
-let bootOverlayLockedText = '';
+let didAutoOpenDefaultSessionTabs = false;
 let tabContextMenu = null;
 let terminalContextMenu = null;
 let activeAccordionSection = 'new-tab';
@@ -204,23 +181,10 @@ let schedulerLogPollTimer = null;
 let explorerState = { currentPath: '', entries: [], breadcrumbs: [], filter: '', selectedPath: '', clipboard: null, openedFile: null, renderedMode: 'source', permission: { access: 'read_only', can_write: false } };
 let explorerContextMenu = null;
 let selectedAdminUserId = '';
-const knownTargets = new Map();
 
 const uid = (prefix = 'tab') => `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
 const getActiveTab = () => tabs.find((tab) => tab.id === activeTabId) || null;
-function rememberTargets(targets = runtimeConfig?.targets || []) {
-  (Array.isArray(targets) ? targets : []).forEach((target) => {
-    if (target?.id) knownTargets.set(target.id, { ...target });
-  });
-}
-const getTargetById = (id) => {
-  const current = (runtimeConfig?.targets || []).find((target) => target.id === id) || null;
-  if (current) {
-    knownTargets.set(id, { ...current });
-    return current;
-  }
-  return knownTargets.get(id) || null;
-};
+const getTargetById = (id) => runtimeConfig.targets.find((target) => target.id === id) || null;
 const displayAliasGroup = (value) => normalizeAliasFolder(value || '') || 'default-group';
 
 function ensureSchedulerStore() {
@@ -438,54 +402,13 @@ function normalizeAliasFolder(value) {
 }
 
 function sessionItems() {
-  return Array.isArray(runtimeConfig?.terminal_sessions) ? runtimeConfig.terminal_sessions : [];
-}
-
-function currentDefaultSessionId() {
-  return runtimeConfig?.current_user?.default_session_id || '';
+  const sessions = Array.isArray(runtimeConfig?.terminal_sessions) ? runtimeConfig.terminal_sessions : [];
+  if (sessions.some((item) => item.id === 'default')) return sessions;
+  return [{ id: 'default', name: 'Sesión principal' }, ...sessions];
 }
 
 function activeSessionId() {
-  return runtimeConfig?.active_session_id || '';
-}
-
-function sessionNameById(sessionId) {
-  if (!sessionId) return 'ninguna';
-  return sessionItems().find((item) => item.id === sessionId)?.name || sessionId;
-}
-
-function setSessionMessage(message = '', target = 'sidebar') {
-  const element = target === 'config' ? els.configMessage : els.sidebarSessionMessage;
-  if (element) element.textContent = message;
-}
-
-function updateSidebarSessionStatus() {
-  if (els.sidebarSessionStatus) els.sidebarSessionStatus.innerHTML = `<strong>Predeterminada</strong>: ${escapeHtml(sessionNameById(currentDefaultSessionId()))}`;
-}
-
-function collectSessionPreferencesPayload() {
-  return {
-    terminal_sessions: sessionItems(),
-    default_session_id: els.configActiveSessionSelect?.value || currentDefaultSessionId() || '',
-    active_session_id: activeSessionId() || '',
-    session_terminal_overrides: runtimeConfig.session_terminal_overrides || {},
-  };
-}
-
-async function saveSessionPreferences(message = '', target = 'sidebar') {
-  const response = await fetchJson('/api/session/preferences/save', { method: 'POST', body: JSON.stringify(collectSessionPreferencesPayload()) });
-  absorbRuntimeConfig(response.config);
-  if (authStatus?.current_user) runtimeConfig.current_user = { ...authStatus.current_user, ...(runtimeConfig.current_user || {}) };
-  updateSidebarSessionStatus();
-  populateTopSessionSelectors();
-  updateNewTabTargetOptions();
-  syncNewTabNameWithTarget(true);
-  renderNewTabCredentialFields();
-  renderCredentialFields();
-  renderScriptsPanel();
-  renderConfigPresets();
-  if (message) setSessionMessage(message, target);
-  return response;
+  return runtimeConfig?.active_session_id || 'default';
 }
 
 function ensureSessionOverrideStore(sessionId) {
@@ -638,28 +561,17 @@ function shellCommandForTarget(target, variant) {
 }
 
 function populateTopSessionSelectors() {
-  rememberTargets(runtimeConfig?.targets || []);
   const sessions = sessionItems();
   const active = activeSessionId();
-  const defaultSession = currentDefaultSessionId();
-  const activeOptions = ['<option value="">Sin sesión activa</option>', ...sessions.map((item) => `<option value="${escapeHtml(item.id)}" ${item.id === active ? 'selected' : ''}>${escapeHtml(item.name)}</option>`)].join('');
-  if (els.activeSessionSelect) {
-    els.activeSessionSelect.innerHTML = activeOptions;
-    els.activeSessionSelect.value = active;
-  }
-  const defaultOptions = ['<option value="">Ninguna (arranque sin sesión)</option>', ...sessions.map((item) => `<option value="${escapeHtml(item.id)}" ${item.id === defaultSession ? 'selected' : ''}>${escapeHtml(item.name)}</option>`)].join('');
-  if (els.configActiveSessionSelect) {
-    els.configActiveSessionSelect.innerHTML = defaultOptions;
-    els.configActiveSessionSelect.value = defaultSession;
-  }
-  const presetOptions = [userCan('manage_config') ? '<option value="general">General</option>' : '', ...sessions.map((item) => `<option value="${escapeHtml(item.id)}">Sesión: ${escapeHtml(item.name)}</option>`)].filter(Boolean).join('');
+  const options = sessions.map((item) => `<option value="${escapeHtml(item.id)}" ${item.id === active ? 'selected' : ''}>${escapeHtml(item.name)}</option>`).join('');
+  if (els.activeSessionSelect) els.activeSessionSelect.innerHTML = options;
+  if (els.configActiveSessionSelect) els.configActiveSessionSelect.innerHTML = options;
+  const presetOptions = ['<option value="general">General</option>', ...sessions.map((item) => `<option value="${escapeHtml(item.id)}">Sesión: ${escapeHtml(item.name)}</option>`)].join('');
   if (els.configPresetSessionSelect) {
-    els.configPresetSessionSelect.innerHTML = presetOptions || '<option value="">Sin sesiones</option>';
-    const allowedValues = [...els.configPresetSessionSelect.options].map((opt) => opt.value);
-    if (!allowedValues.includes(selectedConfigSessionId)) selectedConfigSessionId = userCan('manage_config') ? 'general' : (sessions[0]?.id || '');
-    els.configPresetSessionSelect.value = allowedValues.includes(selectedConfigSessionId) ? selectedConfigSessionId : (allowedValues[0] || '');
+    els.configPresetSessionSelect.innerHTML = presetOptions;
+    if (![...els.configPresetSessionSelect.options].some((opt) => opt.value === selectedConfigSessionId)) selectedConfigSessionId = 'general';
+    els.configPresetSessionSelect.value = selectedConfigSessionId;
   }
-  updateSidebarSessionStatus();
 }
 
 function syncAccordionButtonState(section) {
@@ -690,69 +602,9 @@ function bindAccordionEvents() {
 }
 
 
-function consumePostLoginBootFlag(peekOnly = false) {
-  try {
-    const enabled = window.sessionStorage?.getItem(POST_LOGIN_BOOT_KEY) === '1';
-    if (enabled && !peekOnly) window.sessionStorage.removeItem(POST_LOGIN_BOOT_KEY);
-    return enabled;
-  } catch (error) {
-    return false;
-  }
-}
-
-function stopBootOverlayTicker() {
-  if (bootOverlayTicker) window.clearInterval(bootOverlayTicker);
-  bootOverlayTicker = null;
-}
-
-function startBootOverlayTicker() {
-  stopBootOverlayTicker();
-  bootOverlayTicker = window.setInterval(() => {
-    if (!els.appLoadingOverlay?.classList.contains('visible')) return;
-    if (bootOverlayLockedText) return;
-    bootOverlayMessageIndex = (bootOverlayMessageIndex + 1) % bootOverlayMessages.length;
-    if (els.appLoadingDetail) els.appLoadingDetail.textContent = bootOverlayMessages[bootOverlayMessageIndex];
-  }, 1200);
-}
-
-function showBootOverlay(detail = '', options = {}) {
-  if (!els.appLoadingOverlay) return;
-  const title = options.title || 'Preparando Zenoterm';
-  if (els.appLoadingTitle) els.appLoadingTitle.textContent = title;
-  bootOverlayLockedText = options.lockDetail ? String(detail || '').trim() : '';
-  if (els.appLoadingDetail) {
-    els.appLoadingDetail.textContent = detail || bootOverlayLockedText || bootOverlayMessages[bootOverlayMessageIndex % bootOverlayMessages.length];
-  }
-  document.documentElement.classList.add('boot-after-login');
-  document.body.classList.add('app-booting');
-  els.appLoadingOverlay.classList.add('visible');
-  if (options.lockDetail) stopBootOverlayTicker();
-  else startBootOverlayTicker();
-}
-
-function updateBootOverlay(detail = '', options = {}) {
-  if (!els.appLoadingOverlay) return;
-  showBootOverlay(detail, {
-    title: options.title || els.appLoadingTitle?.textContent || 'Preparando Zenoterm',
-    lockDetail: options.lockDetail !== false,
-  });
-}
-
-function hideBootOverlay(options = {}) {
-  bootOverlayLockedText = '';
-  stopBootOverlayTicker();
-  if (els.appLoadingOverlay) els.appLoadingOverlay.classList.remove('visible');
-  document.body.classList.remove('app-booting');
-  document.documentElement.classList.remove('boot-after-login');
-  if (!options.keepFlag) {
-    try { window.sessionStorage?.removeItem(POST_LOGIN_BOOT_KEY); } catch (error) {}
-  }
-}
-
 function ensureAuthenticatedUi() {
   const hidden = !(runtimeConfig?.auth?.login_required) || authStatus.authenticated;
   els.loginScreen.classList.toggle('hidden', hidden);
-  if (!hidden) hideBootOverlay();
   applyFeatureVisibility();
 }
 
@@ -824,7 +676,6 @@ function visibleViewName() {
 
 function absorbRuntimeConfig(config) {
   runtimeConfig = config || {};
-  rememberTargets(runtimeConfig?.targets || []);
   ensureScriptsArray();
   ensureDockerStore();
   ensureSchedulerStore();
@@ -857,7 +708,7 @@ function applyFeatureVisibility() {
   const view = visibleViewName();
   const onMain = view === 'main';
   const showWhenMain = (el, allowed) => { if (!el) return; el.classList.toggle('hidden', !(onMain && authenticated && allowed)); };
-  showWhenMain(els.configBtn, authenticated);
+  showWhenMain(els.configBtn, userCan('manage_config'));
   showWhenMain(els.adminPageBtn, userCan('manage_administration'));
   showWhenMain(els.scriptsPageBtn, userCan('manage_scripts'));
   showWhenMain(els.dockerPageBtn, userCan('use_docker'));
@@ -881,7 +732,7 @@ function applyFeatureVisibility() {
     if (els.newTabTargetSelect) els.newTabTargetSelect.innerHTML = '';
   }
 
-  if (view === 'config' && !authenticated) showMainView();
+  if (view === 'config' && !userCan('manage_config')) showMainView();
   if (view === 'administration' && !userCan('manage_administration')) showMainView();
   if (view === 'scripts' && !userCan('manage_scripts')) showMainView();
   if (view === 'docker' && !userCan('use_docker')) showMainView();
@@ -1667,39 +1518,6 @@ function renderCredentialFields() {
   }
 }
 
-function isTerminalHostVisible(host) {
-  if (!host) return false;
-  const rect = host.getBoundingClientRect();
-  return rect.width > 0 && rect.height > 0;
-}
-
-function fallbackTerminalGeometry(excludeTabId = '') {
-  const active = tabs.find((candidate) => candidate.id === activeTabId && candidate.id !== excludeTabId && candidate.term?.cols && candidate.term?.rows);
-  if (active) return { cols: active.term.cols, rows: active.term.rows };
-  const sibling = tabs.find((candidate) => candidate.id !== excludeTabId && candidate.term?.cols && candidate.term?.rows);
-  if (sibling) return { cols: sibling.term.cols, rows: sibling.term.rows };
-  return { cols: 120, rows: 32 };
-}
-
-function syncTerminalViewport(tab, { focus = false } = {}) {
-  if (!tab?.term || !tab?.fitAddon) return { cols: 120, rows: 32 };
-  if (isTerminalHostVisible(tab.host)) {
-    try { tab.fitAddon.fit(); } catch {}
-  } else {
-    const fallback = fallbackTerminalGeometry(tab.id);
-    try { tab.term.resize(fallback.cols, fallback.rows); } catch {}
-  }
-  if (focus) {
-    try { tab.term.focus(); } catch {}
-  }
-  return { cols: tab.term.cols, rows: tab.term.rows };
-}
-
-function pushTerminalResize(tab) {
-  if (!tab?.socket || tab.socket.readyState !== WebSocket.OPEN) return;
-  tab.socket.send(JSON.stringify({ type: 'resize', cols: tab.term.cols, rows: tab.term.rows }));
-}
-
 function createTerminalForPane(host, scrollback) {
   const term = new Terminal({
     cursorBlink: true,
@@ -1719,8 +1537,8 @@ function createTerminalForPane(host, scrollback) {
   term.loadAddon(fitAddon);
   term.open(host);
   requestAnimationFrame(() => {
-    if (!isTerminalHostVisible(host)) return;
-    try { fitAddon.fit(); } catch {}
+    fitAddon.fit();
+    term.focus();
   });
   return { term, fitAddon };
 }
@@ -1894,7 +1712,7 @@ function renderTabs() {
   els.tabsList.innerHTML = '';
   tabs.forEach((tab) => {
     const chip = document.createElement('div');
-    chip.className = `tab-chip ${tab.isSessionTab ? 'session-owned' : ''} ${tab.id === activeTabId ? 'active' : ''}`.trim();
+    chip.className = `tab-chip ${tab.id === activeTabId ? 'active' : ''}`;
     chip.innerHTML = `<span>${escapeHtml(tab.title)}</span><button type="button" aria-label="Cerrar">×</button>`;
     chip.addEventListener('click', () => activateTab(tab.id));
     chip.addEventListener('contextmenu', (event) => {
@@ -1929,36 +1747,20 @@ function activateTab(tabId) {
   const tab = getActiveTab();
   if (tab) {
     requestAnimationFrame(() => {
-      syncTerminalViewport(tab, { focus: true });
-      pushTerminalResize(tab);
+      try {
+        tab.fitAddon.fit();
+        tab.term.focus();
+      } catch {}
     });
   }
 }
 
-function openSocketForTab(tab, actionType = 'start', options = {}) {
+function openSocketForTab(tab, actionType = 'start') {
   try { tab.socket?.close(); } catch {}
-  let initialStateSettled = false;
-  const waitForInitialState = new Promise((resolve) => {
-    tab.initialLoadPromise = new Promise((innerResolve) => {
-      tab.resolveInitialLoad = (payload = {}) => {
-        if (initialStateSettled) return;
-        initialStateSettled = true;
-        innerResolve(payload);
-        resolve(payload);
-      };
-    });
-  });
   tab.socket = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
 
   tab.socket.addEventListener('open', () => {
-    requestAnimationFrame(() => {
-      syncTerminalViewport(tab);
-      window.setTimeout(() => {
-        if (!tab.socket || tab.socket.readyState !== WebSocket.OPEN) return;
-        syncTerminalViewport(tab);
-        sendStartPayload(tab, actionType, options);
-      }, 40);
-    });
+    sendStartPayload(tab, actionType);
   });
 
   tab.socket.addEventListener('message', (event) => {
@@ -1973,18 +1775,7 @@ function openSocketForTab(tab, actionType = 'start', options = {}) {
       tab.lastStatus = payload.message || payload.status;
       tab.connected = payload.status === 'connected';
       if (payload.status === 'closed' || payload.status === 'error') tab.connected = false;
-      if (payload.status === 'error') tab.term.writeln(`
-[ERROR] ${payload.message}
-`);
-      if (payload.status === 'connected') {
-        tab.resolveInitialLoad?.({ ok: true, status: payload.status, payload });
-        window.setTimeout(() => {
-          if (!tab.socket || tab.socket.readyState !== WebSocket.OPEN) return;
-          syncTerminalViewport(tab);
-          pushTerminalResize(tab);
-        }, 120);
-      }
-      if (payload.status === 'error') tab.resolveInitialLoad?.({ ok: false, status: payload.status, payload });
+      if (payload.status === 'error') tab.term.writeln(`\r\n[ERROR] ${payload.message}\r\n`);
       if (tab.id === activeTabId) renderTerminalMeta();
       renderTabs();
     }
@@ -1993,7 +1784,6 @@ function openSocketForTab(tab, actionType = 'start', options = {}) {
   tab.socket.addEventListener('close', () => {
     tab.connected = false;
     tab.lastStatus = 'Conexión cerrada';
-    tab.resolveInitialLoad?.({ ok: false, status: 'closed' });
     if (tab.id === activeTabId) renderTerminalMeta();
     renderTabs();
   });
@@ -2001,28 +1791,24 @@ function openSocketForTab(tab, actionType = 'start', options = {}) {
   tab.socket.addEventListener('error', () => {
     tab.connected = false;
     tab.lastStatus = 'Error de WebSocket';
-    tab.resolveInitialLoad?.({ ok: false, status: 'error' });
     if (tab.id === activeTabId) renderTerminalMeta();
     renderTabs();
   });
-
-  return waitForInitialState;
 }
 
-function sendStartPayload(tab, type = 'start', options = {}) {
+function sendStartPayload(tab, type = 'start') {
   const target = getTargetById(tab.targetId);
   if (!target) return;
-  const viewport = syncTerminalViewport(tab);
+  tab.fitAddon.fit();
   tab.term.reset();
   tab.lastStatus = `${type === 'restart' ? 'Reconectando' : 'Conectando'} a ${target.label}…`;
   tab.connected = false;
   tab.socket.send(JSON.stringify({
     type,
     target_id: tab.targetId,
-    cols: viewport.cols,
-    rows: viewport.rows,
+    cols: tab.term.cols,
+    rows: tab.term.rows,
     credentials: tab.credentials || {},
-    defer_startup_commands: !!options.deferStartupCommands,
   }));
   renderTabs();
   renderTerminalMeta();
@@ -2037,7 +1823,7 @@ function createTab(config = {}) {
   els.terminalStack.appendChild(pane);
 
   const scrollback = Number(config.scrollback || runtimeConfig.ui.default_scrollback || 20000);
-  const target = getTargetById(config.targetId) || null;
+  const { term, fitAddon } = createTerminalForPane(host, scrollback);
   const tab = {
     id: uid(),
     title: config.title,
@@ -2046,25 +1832,18 @@ function createTab(config = {}) {
     credentials: { ...(config.credentials || {}) },
     pane,
     host,
-    term: null,
-    fitAddon: null,
+    term,
+    fitAddon,
     socket: null,
     connected: false,
     lastStatus: 'Sin iniciar',
-    currentPath: target?.workspace_dir || runtimeConfig.workspace_dir || 'Desconocido',
+    currentPath: getTargetById(config.targetId)?.workspace_dir || runtimeConfig.workspace_dir || 'Desconocido',
     commandHistory: [],
     pendingCommand: '',
     systemAliases: [],
     aliasGroup: '',
     aliasGroupLabel: '',
-    isSessionTab: !!config.isSessionTab,
-    sessionOriginId: config.sessionOriginId || target?.session_id || '',
-    resolveInitialLoad: null,
-    initialLoadPromise: null,
   };
-  const terminalParts = createTerminalForPane(host, scrollback);
-  tab.term = terminalParts.term;
-  tab.fitAddon = terminalParts.fitAddon;
 
   bindTerminalKeyboardShortcuts(tab);
 
@@ -2084,7 +1863,7 @@ function createTab(config = {}) {
     try { tab.term.focus(); } catch {}
   });
 
-  tab.term.onData((data) => {
+  term.onData((data) => {
     if (data === '\r') {
       pushCommandHistory(tab, tab.pendingCommand);
       tab.pendingCommand = '';
@@ -2097,14 +1876,13 @@ function createTab(config = {}) {
     }
     if (tab.socket && tab.socket.readyState === WebSocket.OPEN) tab.socket.send(JSON.stringify({ type: 'input', data }));
   });
-  tab.term.onResize(({ cols, rows }) => {
+  term.onResize(({ cols, rows }) => {
     if (tab.socket && tab.socket.readyState === WebSocket.OPEN) tab.socket.send(JSON.stringify({ type: 'resize', cols, rows }));
   });
 
   tabs.push(tab);
-  const shouldActivate = config.activate !== false || tabs.length === 1 || !activeTabId;
-  if (shouldActivate) activateTab(tab.id);
-  else renderTabs();
+  activateTab(tab.id);
+  renderTabs();
   return tab;
 }
 
@@ -2366,29 +2144,20 @@ async function handleLogin(event) {
   event.preventDefault();
   els.loginMessage.textContent = '';
   try {
-    try { window.sessionStorage?.setItem(POST_LOGIN_BOOT_KEY, '1'); } catch (storageError) {}
     const data = await fetchJson('/api/auth/login', { method: 'POST', body: JSON.stringify({ username: els.loginUsername.value, password: els.loginPassword.value }) });
     authStatus.authenticated = !!data.authenticated;
     authStatus.current_user = data.current_user || null;
     await reloadRuntimeConfig();
     ensureAuthenticatedUi();
     els.loginPassword.value = '';
-    autoOpenedSessionTokens.clear();
-    sessionAutoOpenInProgress = false;
-    showBootOverlay('Entrando y preparando tu espacio…', { title: 'Accediendo a Zenoterm', lockDetail: false });
-    await autoOpenDefaultSessionTabs({ showLoadingOverlay: true });
-    updateBootOverlay('Todo listo. Abriendo tu entorno…', { title: 'Bienvenido', lockDetail: true });
-    await delay(260);
-    hideBootOverlay();
+    autoOpenDefaultSessionTabs();
   } catch (error) {
-    hideBootOverlay();
     els.loginMessage.textContent = error.message;
   }
 }
 
 async function handleLogout() {
   await fetchJson('/api/auth/logout', { method: 'POST', body: JSON.stringify({}) });
-  hideBootOverlay();
   authStatus.authenticated = false;
   authStatus.current_user = null;
   await reloadRuntimeConfig();
@@ -2399,8 +2168,6 @@ async function handleLogout() {
     tab.connected = false;
     tab.lastStatus = 'Sesión cerrada por logout';
   }
-  autoOpenedSessionTokens.clear();
-  sessionAutoOpenInProgress = false;
   renderTabs();
   renderTerminalMeta();
 }
@@ -2617,7 +2384,7 @@ function populateConfigView() {
   if (els.adminUsernameInput) els.adminUsernameInput.value = runtimeConfig.auth?.admin_username || '';
   if (els.adminPasswordInput) els.adminPasswordInput.value = '';
   (runtimeConfig.terminal_presets || []).forEach((preset) => ensurePresetShellSelection(preset));
-  if (els.configActiveSessionSelect) els.configActiveSessionSelect.value = currentDefaultSessionId();
+  if (els.configActiveSessionSelect) els.configActiveSessionSelect.value = activeSessionId();
   if (els.configPresetSessionSelect) els.configPresetSessionSelect.value = selectedConfigSessionId;
   renderConfigPresets();
 }
@@ -2632,8 +2399,7 @@ function collectConfigPayload() {
       private_key_path: els.remoteDefaultKeyPath.value || '',
       strict_host_key: !!els.remoteDefaultStrictHostKey.checked,
     },
-    active_session_id: activeSessionId(),
-    default_session_id: els.configActiveSessionSelect?.value || currentDefaultSessionId(),
+    active_session_id: els.configActiveSessionSelect?.value || activeSessionId(),
     terminal_sessions: sessionItems(),
     session_terminal_overrides: runtimeConfig.session_terminal_overrides || {},
     terminal_presets: (runtimeConfig.terminal_presets || []).map((preset, index) => ({
@@ -2675,7 +2441,7 @@ async function saveGlobalConfig() {
 }
 
 function showConfigView() {
-  if (!authStatus?.authenticated && !!runtimeConfig?.auth?.login_required) return;
+  if (!userCan('manage_config')) return;
   els.mainView.classList.add('hidden');
   els.configView.classList.remove('hidden');
   els.adminView.classList.add('hidden');
@@ -3857,79 +3623,45 @@ function bindEvents() {
     applyHistoryLimitToAllTabs();
   });
   els.activeSessionSelect?.addEventListener('change', async () => {
-    const response = await fetchJson('/api/session/select', { method: 'POST', body: JSON.stringify({ session_id: els.activeSessionSelect.value || '' }) });
-    absorbRuntimeConfig(response.config);
+    const response = await fetchJson('/api/session/select', { method: 'POST', body: JSON.stringify({ session_id: els.activeSessionSelect.value || 'default' }) });
+    runtimeConfig = response.config;
+    ensureScriptsArray();
     populateTopSessionSelectors();
     updateNewTabTargetOptions();
     syncNewTabNameWithTarget(true);
     renderNewTabCredentialFields();
     renderCredentialFields();
     renderScriptsPanel();
-    setSessionMessage(`Sesión activa: ${sessionNameById(activeSessionId())}`, 'sidebar');
-    await autoOpenDefaultSessionTabs({ force: true, sessionId: activeSessionId() });
+    if (!tabs.length) { didAutoOpenDefaultSessionTabs = false; autoOpenDefaultSessionTabs(); }
   });
   els.configActiveSessionSelect?.addEventListener('change', () => {
-    if (!runtimeConfig.current_user || typeof runtimeConfig.current_user !== 'object') runtimeConfig.current_user = {};
-    runtimeConfig.current_user.default_session_id = els.configActiveSessionSelect.value || '';
+    runtimeConfig.active_session_id = els.configActiveSessionSelect.value || 'default';
     populateTopSessionSelectors();
-    setSessionMessage(`Sesión predeterminada preparada: ${sessionNameById(currentDefaultSessionId())}`, 'config');
   });
   els.configPresetSessionSelect?.addEventListener('change', () => {
-    selectedConfigSessionId = els.configPresetSessionSelect.value || (userCan('manage_config') ? 'general' : '');
+    selectedConfigSessionId = els.configPresetSessionSelect.value || 'general';
     renderConfigPresets();
   });
-
-  async function handleCreateSession(name, target = 'sidebar') {
-    const trimmed = String(name || '').trim();
-    if (!trimmed) { setSessionMessage('Escribe un nombre para la nueva sesión.', target); return; }
-    const nextId = trimmed.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || uid('session');
-    if (sessionItems().some((item) => item.id === nextId)) { setSessionMessage('Ya existe una sesión con ese identificador.', target); return; }
-    runtimeConfig.terminal_sessions = [...sessionItems(), { id: nextId, name: trimmed }];
-    if (target === 'config' && els.newSessionNameInput) els.newSessionNameInput.value = '';
-    if (target === 'sidebar' && els.sidebarNewSessionNameInput) els.sidebarNewSessionNameInput.value = '';
-    if (!runtimeConfig.active_session_id) runtimeConfig.active_session_id = nextId;
-    if (!runtimeConfig.current_user || typeof runtimeConfig.current_user !== 'object') runtimeConfig.current_user = {};
-    if (!runtimeConfig.current_user.default_session_id) runtimeConfig.current_user.default_session_id = nextId;
+  els.addSessionBtn?.addEventListener('click', () => {
+    const name = String(els.newSessionNameInput?.value || '').trim();
+    if (!name) { if (els.configMessage) els.configMessage.textContent = 'Escribe un nombre para la nueva sesión.'; return; }
+    const nextId = name.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || uid('session');
+    if (sessionItems().some((item) => item.id === nextId)) { if (els.configMessage) els.configMessage.textContent = 'Ya existe una sesión con ese identificador.'; return; }
+    runtimeConfig.terminal_sessions = [...sessionItems(), { id: nextId, name }];
+    if (els.newSessionNameInput) els.newSessionNameInput.value = '';
     populateTopSessionSelectors();
-    await saveSessionPreferences(`Sesión añadida: ${trimmed}`, target);
-  }
-
-  async function handleRemoveSession(sessionId, target = 'sidebar') {
-    const normalizedId = String(sessionId || '').trim();
-    if (!normalizedId) { setSessionMessage('No hay ninguna sesión activa para eliminar.', target); return; }
-    runtimeConfig.terminal_sessions = sessionItems().filter((item) => item.id !== normalizedId);
-    if (runtimeConfig.session_terminal_overrides) delete runtimeConfig.session_terminal_overrides[normalizedId];
-    if (runtimeConfig.active_session_id === normalizedId) runtimeConfig.active_session_id = '';
-    if (runtimeConfig.current_user?.default_session_id === normalizedId) runtimeConfig.current_user.default_session_id = '';
-    if (selectedConfigSessionId === normalizedId) selectedConfigSessionId = userCan('manage_config') ? 'general' : '';
+    if (els.configMessage) els.configMessage.textContent = `Sesión añadida: ${name}`;
+  });
+  els.removeSessionBtn?.addEventListener('click', () => {
+    const sessionId = els.configActiveSessionSelect?.value || activeSessionId();
+    if (!sessionId || sessionId === 'default') { if (els.configMessage) els.configMessage.textContent = 'La sesión principal no se puede eliminar.'; return; }
+    runtimeConfig.terminal_sessions = sessionItems().filter((item) => item.id !== sessionId);
+    if (runtimeConfig.session_terminal_overrides) delete runtimeConfig.session_terminal_overrides[sessionId];
+    if (runtimeConfig.active_session_id === sessionId) runtimeConfig.active_session_id = 'default';
+    if (selectedConfigSessionId === sessionId) selectedConfigSessionId = 'general';
     populateTopSessionSelectors();
     renderConfigPresets();
-    await saveSessionPreferences('Sesión eliminada.', target);
-  }
-
-  els.addSessionBtn?.addEventListener('click', async () => {
-    await handleCreateSession(els.newSessionNameInput?.value || '', 'config');
-  });
-  els.removeSessionBtn?.addEventListener('click', async () => {
-    await handleRemoveSession(els.configActiveSessionSelect?.value || activeSessionId(), 'config');
-  });
-  els.sidebarAddSessionBtn?.addEventListener('click', async () => {
-    await handleCreateSession(els.sidebarNewSessionNameInput?.value || '', 'sidebar');
-  });
-  els.sidebarRemoveSessionBtn?.addEventListener('click', async () => {
-    await handleRemoveSession(activeSessionId(), 'sidebar');
-  });
-  els.sidebarSetDefaultSessionBtn?.addEventListener('click', async () => {
-    if (!runtimeConfig.current_user || typeof runtimeConfig.current_user !== 'object') runtimeConfig.current_user = {};
-    runtimeConfig.current_user.default_session_id = activeSessionId() || '';
-    populateTopSessionSelectors();
-    await saveSessionPreferences(`Sesión predeterminada guardada: ${sessionNameById(currentDefaultSessionId())}`, 'sidebar');
-  });
-  els.sidebarClearDefaultSessionBtn?.addEventListener('click', async () => {
-    if (!runtimeConfig.current_user || typeof runtimeConfig.current_user !== 'object') runtimeConfig.current_user = {};
-    runtimeConfig.current_user.default_session_id = '';
-    populateTopSessionSelectors();
-    await saveSessionPreferences('Sesión predeterminada eliminada.', 'sidebar');
+    if (els.configMessage) els.configMessage.textContent = 'Sesión eliminada.';
   });
 
   els.terminalPresetSelect.addEventListener('change', () => {
@@ -4043,109 +3775,26 @@ function bindEvents() {
   window.addEventListener('resize', () => {
     const tab = getActiveTab();
     if (!tab) return;
-    syncTerminalViewport(tab);
-    pushTerminalResize(tab);
+    tab.fitAddon.fit();
+    if (tab.socket && tab.socket.readyState === WebSocket.OPEN) tab.socket.send(JSON.stringify({ type: 'resize', cols: tab.term.cols, rows: tab.term.rows }));
   });
 }
 
-function autoOpenSessionToken(sessionId) {
-  return String(sessionId || '').trim() || NO_SESSION_AUTO_TOKEN;
-}
-
-function sessionDefaultTargets() {
-  return (runtimeConfig?.targets || []).filter((target) => !!target.open_by_default);
-}
-
-function sessionTabAlreadyOpen(targetId, sessionId) {
-  return tabs.some((tab) => tab.isSessionTab && tab.targetId === targetId && autoOpenSessionToken(tab.sessionOriginId) === autoOpenSessionToken(sessionId));
-}
-
-function delay(ms) {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
-}
-
-async function runDeferredStartupForTab(tab) {
-  if (!tab?.socket || tab.socket.readyState !== WebSocket.OPEN) return;
-  tab.socket.send(JSON.stringify({
-    type: 'run_startup',
-    target_id: tab.targetId,
-    credentials: tab.credentials || {},
-  }));
-}
-
-async function autoOpenDefaultSessionTabs(options = {}) {
-  const requestedSessionId = options.sessionId ?? activeSessionId() ?? '';
-  const sessionId = String(requestedSessionId || '').trim();
-  const sessionToken = autoOpenSessionToken(sessionId);
-  const force = !!options.force;
-  const showLoadingOverlay = !!options.showLoadingOverlay;
-  if (sessionAutoOpenInProgress) return [];
-  if (!force && autoOpenedSessionTokens.has(sessionToken)) return [];
-  const defaults = sessionDefaultTargets();
-  if (!defaults.length) {
-    autoOpenedSessionTokens.add(sessionToken);
-    if (showLoadingOverlay) updateBootOverlay('No hay pestañas automáticas en la sesión. Dejándolo listo…', { title: 'Preparando Zenoterm', lockDetail: true });
-    return [];
-  }
-  sessionAutoOpenInProgress = true;
-  const createdTabs = [];
-  try {
-    if (showLoadingOverlay) updateBootOverlay(`Abriendo pestañas de la sesión (${defaults.length})…`, { title: 'Preparando tu sesión', lockDetail: true });
-    for (const [index, target] of defaults.entries()) {
-      if (sessionTabAlreadyOpen(target.id, sessionId)) continue;
-      if (showLoadingOverlay) updateBootOverlay(`Abriendo pestaña ${index + 1}/${defaults.length}: ${target.label}`, { title: 'Preparando tu sesión', lockDetail: true });
-      const tab = createTab({
-        title: target.label,
-        targetId: target.id,
-        scrollback: Number(runtimeConfig.ui.default_scrollback || 20000),
-        credentials: {},
-        isSessionTab: true,
-        sessionOriginId: sessionId,
-        activate: createdTabs.length === 0,
-      });
-      createdTabs.push(tab);
-      await Promise.race([
-        openSocketForTab(tab, 'start', { deferStartupCommands: true }),
-        delay(6000).then(() => ({ ok: false, status: 'timeout' })),
-      ]);
-    }
-    if (showLoadingOverlay && createdTabs.length) updateBootOverlay('Ejecutando comandos iniciales…', { title: 'Preparando tu sesión', lockDetail: true });
-    for (const [index, tab] of createdTabs.entries()) {
-      if (showLoadingOverlay) updateBootOverlay(`Aplicando arranque ${index + 1}/${createdTabs.length}: ${tab.title}`, { title: 'Preparando tu sesión', lockDetail: true });
-      await runDeferredStartupForTab(tab);
-      await delay(80);
-    }
-    if (createdTabs[0]) {
-      activateTab(createdTabs[0].id);
-      window.setTimeout(() => activateTab(createdTabs[0].id), 120);
-    }
-    if (showLoadingOverlay) updateBootOverlay('Todo está listo. Activando la primera pestaña…', { title: 'Preparando tu sesión', lockDetail: true });
-    autoOpenedSessionTokens.add(sessionToken);
-    return createdTabs;
-  } finally {
-    sessionAutoOpenInProgress = false;
-  }
+function autoOpenDefaultSessionTabs() {
+  if (didAutoOpenDefaultSessionTabs) return;
+  didAutoOpenDefaultSessionTabs = true;
+  const defaults = (runtimeConfig?.targets || []).filter((target) => !!target.open_by_default);
+  defaults.forEach((target) => {
+    const tab = createTab({ title: target.label, targetId: target.id, scrollback: Number(runtimeConfig.ui.default_scrollback || 20000), credentials: {} });
+    openSocketForTab(tab, 'start');
+  });
 }
 
 async function loadBootstrap() {
-  const postLoginBoot = consumePostLoginBootFlag(true);
-  if (postLoginBoot) {
-    bootOverlayMessageIndex = 0;
-    showBootOverlay(bootOverlayMessages[0], { title: 'Preparando tu sesión', lockDetail: false });
-  }
   await reloadRuntimeConfig();
   if (els.loginUsername) els.loginUsername.value = runtimeConfig?.auth?.admin_username || els.loginUsername.value || '';
   ensureAuthenticatedUi();
-  if (authStatus.authenticated || !(runtimeConfig?.auth?.login_required)) {
-    await autoOpenDefaultSessionTabs({ showLoadingOverlay: postLoginBoot });
-    if (postLoginBoot) {
-      updateBootOverlay('Todo listo. Ya puedes empezar.', { title: 'Bienvenido', lockDetail: true });
-      await delay(240);
-      hideBootOverlay();
-    }
-  } else {
-    hideBootOverlay();
-  }
+  if (authStatus.authenticated || !(runtimeConfig?.auth?.login_required)) autoOpenDefaultSessionTabs();
 }
 
 bindStaticEvents();
@@ -4153,7 +3802,6 @@ bindStaticEvents();
 bindEvents();
 
 loadBootstrap().catch((error) => {
-  hideBootOverlay();
   console.error(error);
   els.terminalMeta.innerHTML = `<span class="meta-item"><span class="meta-key meta-key-0">Error:</span> ${escapeHtml(error.message)}</span>`;
 });

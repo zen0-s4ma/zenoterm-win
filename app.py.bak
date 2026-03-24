@@ -207,52 +207,6 @@ def default_explorer_entries_for_role(role: str) -> list[dict[str, Any]]:
     return [{"path": app_root, "label": "Proyecto Zenoterm", "access": access}]
 
 
-
-def normalize_optional_session_id(value: Any) -> str:
-    return re.sub(r"[^A-Za-z0-9._-]+", "-", str(value or "").strip()).strip("-._")
-
-
-def normalize_user_terminal_sessions(raw: Any) -> list[dict[str, str]]:
-    sessions: list[dict[str, str]] = []
-    if isinstance(raw, list):
-        for item in raw:
-            if not isinstance(item, dict):
-                continue
-            raw_name = str(item.get("name") or "").strip()
-            session_id = normalize_optional_session_id(item.get("id") or raw_name or "")
-            if not session_id or not raw_name:
-                continue
-            if any(existing["id"] == session_id for existing in sessions):
-                continue
-            sessions.append({"id": session_id, "name": raw_name})
-    return sessions
-
-
-def normalize_session_override_map(raw: Any, valid_session_ids: set[str]) -> dict[str, dict[str, dict[str, Any]]]:
-    if not isinstance(raw, dict):
-        return {}
-    result: dict[str, dict[str, dict[str, Any]]] = {}
-    allowed_fields = {
-        "name", "scope", "auth_type", "target_os", "shell_family", "host", "port", "username",
-        "private_key_path", "strict_host_key", "startup_command", "command_file_content",
-        "launch_command", "open_by_default"
-    }
-    for session_id, mapping in raw.items():
-        normalized_session_id = normalize_optional_session_id(session_id)
-        if normalized_session_id not in valid_session_ids or not isinstance(mapping, dict):
-            continue
-        session_map: dict[str, dict[str, Any]] = {}
-        for preset_id, override in mapping.items():
-            if not isinstance(override, dict):
-                continue
-            normalized_override = {key: override[key] for key in allowed_fields if key in override}
-            if normalized_override:
-                session_map[str(preset_id)] = normalized_override
-        if session_map:
-            result[normalized_session_id] = session_map
-    return result
-
-
 def make_user_record(
     user_id: str,
     username: str,
@@ -261,19 +215,10 @@ def make_user_record(
     password: str,
     explorer_entries: list[dict[str, Any]] | None = None,
     enabled: bool = True,
-    terminal_sessions: list[dict[str, Any]] | None = None,
-    default_session_id: str | None = None,
-    session_terminal_overrides: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     normalized_role = normalize_role(role)
     hashed = hash_password(password)
     entries = [entry for entry in (normalize_explorer_entry(item) for item in (explorer_entries or default_explorer_entries_for_role(normalized_role))) if entry]
-    session_items = normalize_user_terminal_sessions(terminal_sessions or [])
-    session_ids = {item["id"] for item in session_items}
-    normalized_default_session = normalize_optional_session_id(default_session_id)
-    if normalized_default_session not in session_ids:
-        normalized_default_session = ""
-    session_overrides = normalize_session_override_map(session_terminal_overrides or {}, session_ids)
     return {
         "id": str(user_id or secrets.token_hex(8)),
         "username": sanitize_username(username, "user"),
@@ -282,31 +227,13 @@ def make_user_record(
         "enabled": bool(enabled),
         **hashed,
         "explorer_entries": entries,
-        "terminal_sessions": session_items,
-        "default_session_id": normalized_default_session,
-        "session_terminal_overrides": session_overrides,
     }
 
 
 def default_user_store() -> dict[str, Any]:
     return {
         "users": [
-            make_user_record(
-                "user-admin",
-                "admin",
-                "Administrador",
-                "administrator",
-                "admin",
-                explorer_entries=[],
-                terminal_sessions=[{"id": "test-auto-sesion", "name": "test-auto-sesion"}],
-                default_session_id="test-auto-sesion",
-                session_terminal_overrides={
-                    "test-auto-sesion": {
-                        "local::powershell": {"name": "test-auto-sesion-pws", "startup_command": "ls", "open_by_default": True},
-                        "local::cmd": {"name": "test-auto-sesion-cmd", "startup_command": "dir", "open_by_default": True},
-                    }
-                },
-            ),
+            make_user_record("user-admin", "admin", "Administrador", "administrator", "admin", explorer_entries=[]),
             make_user_record("user-total", "total", "Usuario total", "total", "user"),
             make_user_record("user-no-docker", "sin-docker", "Usuario sin Docker", "no_docker", "user"),
             make_user_record("user-remote", "remoto", "Usuario para remoto", "remote_only", "user"),
@@ -330,11 +257,6 @@ def get_users() -> list[dict[str, Any]]:
         role = normalize_role(item.get("role"))
         display_name = str(item.get("display_name") or username).strip() or username
         entries = [entry for entry in (normalize_explorer_entry(entry) for entry in (item.get("explorer_entries") or [])) if entry]
-        terminal_sessions = normalize_user_terminal_sessions(item.get("terminal_sessions") or [])
-        session_ids = {entry["id"] for entry in terminal_sessions}
-        default_session_id = normalize_optional_session_id(item.get("default_session_id"))
-        if default_session_id not in session_ids:
-            default_session_id = ""
         users.append({
             "id": str(item.get("id") or f"user-{index + 1}"),
             "username": username,
@@ -345,9 +267,6 @@ def get_users() -> list[dict[str, Any]]:
             "password_hash": str(item.get("password_hash") or ""),
             "password_iterations": int(item.get("password_iterations") or 310000),
             "explorer_entries": entries,
-            "terminal_sessions": terminal_sessions,
-            "default_session_id": default_session_id,
-            "session_terminal_overrides": normalize_session_override_map(item.get("session_terminal_overrides") or {}, session_ids),
         })
     return users
 
@@ -399,9 +318,6 @@ def serialize_current_user(user: dict[str, Any] | None) -> dict[str, Any] | None
         "enabled": bool(user.get("enabled", True)),
         "permissions": permissions,
         "explorer_entries": [] if permissions.get("is_admin") else explorer_entries,
-        "terminal_sessions": get_terminal_sessions(user),
-        "default_session_id": get_user_default_session_id(user),
-        "session_terminal_overrides": get_user_session_terminal_overrides(user),
     }
 
 
@@ -409,6 +325,7 @@ def serialize_user_for_admin(user: dict[str, Any]) -> dict[str, Any]:
     payload = serialize_current_user(user) or {}
     payload.update({"new_password": ""})
     return payload
+
 
 def ensure_auth_config_shape() -> None:
     auth = CONFIG.setdefault("auth", {})
@@ -1822,63 +1739,12 @@ def build_default_remote_terminal_presets() -> list[dict[str, Any]]:
     return presets
 
 
-
-NO_SESSION_TARGET_TOKEN = "__no_session__"
-
-
 def normalize_terminal_session_id(value: str) -> str:
     clean = re.sub(r"[^A-Za-z0-9._-]+", "-", str(value or "").strip()).strip("-._")
     return clean or "default"
 
 
-def normalize_optional_session_id(value: Any) -> str:
-    return re.sub(r"[^A-Za-z0-9._-]+", "-", str(value or "").strip()).strip("-._")
-
-
-def normalize_user_terminal_sessions(raw: Any) -> list[dict[str, str]]:
-    sessions: list[dict[str, str]] = []
-    if isinstance(raw, list):
-        for item in raw:
-            if not isinstance(item, dict):
-                continue
-            raw_name = str(item.get("name") or "").strip()
-            session_id = normalize_optional_session_id(item.get("id") or raw_name or "")
-            if not session_id or not raw_name:
-                continue
-            if any(existing["id"] == session_id for existing in sessions):
-                continue
-            sessions.append({"id": session_id, "name": raw_name})
-    return sessions
-
-
-def normalize_session_override_map(raw: Any, valid_session_ids: set[str]) -> dict[str, dict[str, dict[str, Any]]]:
-    if not isinstance(raw, dict):
-        return {}
-    result: dict[str, dict[str, dict[str, Any]]] = {}
-    allowed_fields = {
-        "name", "scope", "auth_type", "target_os", "shell_family", "host", "port", "username",
-        "private_key_path", "strict_host_key", "startup_command", "command_file_content",
-        "launch_command", "open_by_default"
-    }
-    for session_id, mapping in raw.items():
-        normalized_session_id = normalize_optional_session_id(session_id)
-        if normalized_session_id not in valid_session_ids or not isinstance(mapping, dict):
-            continue
-        session_map: dict[str, dict[str, Any]] = {}
-        for preset_id, override in mapping.items():
-            if not isinstance(override, dict):
-                continue
-            normalized_override = {key: override[key] for key in allowed_fields if key in override}
-            if normalized_override:
-                session_map[str(preset_id)] = normalized_override
-        if session_map:
-            result[normalized_session_id] = session_map
-    return result
-
-
-def get_terminal_sessions(user: dict[str, Any] | None = None) -> list[dict[str, str]]:
-    if user is not None:
-        return normalize_user_terminal_sessions(user.get("terminal_sessions") or [])
+def get_terminal_sessions() -> list[dict[str, str]]:
     raw = CONFIG.get("terminal_sessions")
     sessions: list[dict[str, str]] = []
     if isinstance(raw, list):
@@ -1894,56 +1760,37 @@ def get_terminal_sessions(user: dict[str, Any] | None = None) -> list[dict[str, 
     return sessions or [{"id": "default", "name": "Sesión principal"}]
 
 
-def get_user_default_session_id(user: dict[str, Any] | None) -> str:
-    if not user:
-        return ""
-    valid_ids = {item["id"] for item in get_terminal_sessions(user)}
-    default_session_id = normalize_optional_session_id(user.get("default_session_id"))
-    return default_session_id if default_session_id in valid_ids else ""
-
-
-def get_session_terminal_overrides(user: dict[str, Any] | None = None) -> dict[str, dict[str, dict[str, Any]]]:
-    if user is not None:
-        valid_sessions = {item["id"] for item in get_terminal_sessions(user)}
-        return normalize_session_override_map(user.get("session_terminal_overrides") or {}, valid_sessions)
-    raw = CONFIG.get("session_terminal_overrides") or {}
-    valid_sessions = {item["id"] for item in get_terminal_sessions()}
-    return normalize_session_override_map(raw, valid_sessions)
-
-
-def get_user_session_terminal_overrides(user: dict[str, Any] | None) -> dict[str, dict[str, dict[str, Any]]]:
-    return get_session_terminal_overrides(user)
-
-
-def get_active_session_id(user: dict[str, Any] | None = None, session_record: dict[str, Any] | None = None) -> str:
-    if user is not None:
-        valid_ids = {item["id"] for item in get_terminal_sessions(user)}
-        candidate = normalize_optional_session_id((session_record or {}).get("active_session_id"))
-        if candidate and candidate in valid_ids:
-            return candidate
-        default_session_id = get_user_default_session_id(user)
-        return default_session_id if default_session_id in valid_ids else ""
+def get_active_session_id() -> str:
     active = normalize_terminal_session_id(str(CONFIG.get("active_session_id") or "default"))
     valid_ids = {item["id"] for item in get_terminal_sessions()}
     return active if active in valid_ids else "default"
 
 
-def session_target_scope_token(session_id: str | None) -> str:
-    normalized = normalize_optional_session_id(session_id)
-    return normalized or NO_SESSION_TARGET_TOKEN
-
-
-def make_scoped_target_id(session_id: str | None, base_target_id: str) -> str:
-    return f"session::{session_target_scope_token(session_id)}@@{base_target_id}"
-
-
-def split_scoped_target_id(target_id: str) -> tuple[str | None, str]:
-    raw = str(target_id or "").strip()
-    if raw.startswith("session::") and "@@" in raw:
-        token, base_target_id = raw.split("@@", 1)
-        token_value = token.split("session::", 1)[1]
-        return ("" if token_value == NO_SESSION_TARGET_TOKEN else normalize_optional_session_id(token_value)), base_target_id
-    return None, raw
+def get_session_terminal_overrides() -> dict[str, dict[str, dict[str, Any]]]:
+    raw = CONFIG.get("session_terminal_overrides") or {}
+    if not isinstance(raw, dict):
+        return {}
+    valid_sessions = {item["id"] for item in get_terminal_sessions()}
+    result: dict[str, dict[str, dict[str, Any]]] = {}
+    allowed_fields = {
+        "name", "scope", "auth_type", "target_os", "shell_family", "host", "port", "username",
+        "private_key_path", "strict_host_key", "startup_command", "command_file_content",
+        "launch_command", "open_by_default"
+    }
+    for session_id, mapping in raw.items():
+        normalized_session_id = normalize_terminal_session_id(session_id)
+        if normalized_session_id not in valid_sessions or not isinstance(mapping, dict):
+            continue
+        session_map: dict[str, dict[str, Any]] = {}
+        for preset_id, override in mapping.items():
+            if not isinstance(override, dict):
+                continue
+            normalized_override = {key: override[key] for key in allowed_fields if key in override}
+            if normalized_override:
+                session_map[str(preset_id)] = normalized_override
+        if session_map:
+            result[normalized_session_id] = session_map
+    return result
 
 
 def get_stored_user_presets() -> list[dict[str, Any]]:
@@ -1965,21 +1812,11 @@ def get_base_terminal_presets() -> list[dict[str, Any]]:
     return build_detected_local_presets() + user_presets
 
 
-def apply_session_override_to_preset(
-    preset: dict[str, Any],
-    session_id: str | None = None,
-    user: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    if user is not None:
-        active_session = normalize_optional_session_id(session_id)
-        if not active_session:
-            return normalize_preset(preset, 0)
-        overrides = get_session_terminal_overrides(user).get(active_session) or {}
-    else:
-        active_session = normalize_terminal_session_id(session_id or get_active_session_id())
-        if active_session == "default":
-            return normalize_preset(preset, 0)
-        overrides = get_session_terminal_overrides().get(active_session) or {}
+def apply_session_override_to_preset(preset: dict[str, Any], session_id: str | None = None) -> dict[str, Any]:
+    active_session = normalize_terminal_session_id(session_id or get_active_session_id())
+    if active_session == "default":
+        return normalize_preset(preset, 0)
+    overrides = get_session_terminal_overrides().get(active_session) or {}
     override = overrides.get(str(preset.get("id") or "")) or {}
     merged = dict(preset)
     merged.update(override)
@@ -1991,11 +1828,9 @@ def apply_session_override_to_preset(
     return normalize_preset(merged, 0)
 
 
-def get_effective_terminal_presets(
-    session_id: str | None = None,
-    user: dict[str, Any] | None = None,
-) -> list[dict[str, Any]]:
-    return [apply_session_override_to_preset(item, session_id, user=user) for item in get_base_terminal_presets()]
+def get_effective_terminal_presets(session_id: str | None = None) -> list[dict[str, Any]]:
+    return [apply_session_override_to_preset(item, session_id) for item in get_base_terminal_presets()]
+
 
 SCRIPT_VARIANT_KEYS = ("default", "powershell", "cmd", "posix", "generic")
 DISCOVERABLE_SCRIPT_EXTENSIONS = {".py", ".ps1", ".sh", ".bash", ".cmd", ".bat"}
@@ -2249,19 +2084,15 @@ def normalize_preset(item: dict[str, Any], index: int) -> dict[str, Any]:
     }
 
 
-
-def build_targets(session_id: str | None = None, user: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+def build_targets(session_id: str | None = None) -> list[dict[str, Any]]:
     targets: list[dict[str, Any]] = []
-    effective_session_id = normalize_optional_session_id(session_id) if user is not None else normalize_terminal_session_id(session_id or get_active_session_id())
-    for index, raw in enumerate(get_effective_terminal_presets(effective_session_id, user=user)):
+    effective_session_id = normalize_terminal_session_id(session_id or get_active_session_id())
+    for index, raw in enumerate(get_effective_terminal_presets(effective_session_id)):
         preset = normalize_preset(raw, index)
         shell = shell_definitions_for_scope(preset["scope"], preset["target_os"]).get(preset["shell_family"], {})
-        base_target_id = str(preset["id"])
-        target_id = make_scoped_target_id(effective_session_id, base_target_id) if user is not None else base_target_id
         if preset["scope"] == "local":
             targets.append({
-                "id": target_id,
-                "_base_id": base_target_id,
+                "id": preset["id"],
                 "label": f"Local: {preset['name']}",
                 "mode": "direct",
                 "connection_scope": "local",
@@ -2284,8 +2115,7 @@ def build_targets(session_id: str | None = None, user: dict[str, Any] | None = N
         else:
             mode = "ssh_key" if preset["auth_type"] == "key" else "ssh_password"
             targets.append({
-                "id": target_id,
-                "_base_id": base_target_id,
+                "id": preset["id"],
                 "label": f"Remote: {preset['name']}",
                 "mode": mode,
                 "connection_scope": "remote",
@@ -2309,16 +2139,7 @@ def build_targets(session_id: str | None = None, user: dict[str, Any] | None = N
                 "open_by_default": bool(preset.get("open_by_default", False)),
                 "session_id": effective_session_id,
             })
-    docker_targets = build_docker_targets(effective_session_id)
-    if user is not None:
-        for item in docker_targets:
-            scoped_item = dict(item)
-            scoped_item["_base_id"] = str(item.get("id") or "")
-            scoped_item["id"] = make_scoped_target_id(effective_session_id, scoped_item["_base_id"])
-            scoped_item["session_id"] = effective_session_id
-            targets.append(scoped_item)
-    else:
-        targets.extend(docker_targets)
+    targets.extend(build_docker_targets(effective_session_id))
     return targets
 
 
@@ -2326,11 +2147,9 @@ TARGETS = build_targets(get_active_session_id())
 TARGETS_BY_ID = {str(item["id"]): item for item in TARGETS}
 
 
-def public_targets(targets: list[dict[str, Any]] | None = None, active_session_id: str | None = None) -> list[dict[str, Any]]:
+def public_targets() -> list[dict[str, Any]]:
     items = []
-    source_targets = targets if targets is not None else TARGETS
-    default_active = normalize_optional_session_id(active_session_id) if active_session_id is not None else ""
-    for target in source_targets:
+    for target in TARGETS:
         mode = str(target.get("mode") or "direct")
         items.append({
             "id": str(target.get("id") or ""),
@@ -2359,9 +2178,10 @@ def public_targets(targets: list[dict[str, Any]] | None = None, active_session_i
             "workspace_dir": str(target.get("workspace_dir") or APP_DIR),
             "detected_local": bool(target.get("detected_local") or False),
             "open_by_default": bool(target.get("open_by_default") or False),
-            "session_id": str(target.get("session_id") or default_active),
+            "session_id": str(target.get("session_id") or get_active_session_id()),
         })
     return items
+
 
 class WindowsLocalPtySession(SessionBase):
     def __init__(self, shell_id: str, cols: int, rows: int, launch_command: str | None = None) -> None:
@@ -2681,19 +2501,11 @@ def to_session_input(text: str) -> str:
     return normalized.replace("\n", "\r") + "\r"
 
 
-def session_start_command_delay_seconds(target: dict[str, Any] | None = None) -> float:
-    shell_family = str((target or {}).get("shell_family") or "").strip().lower()
-    mode = str((target or {}).get("mode") or "").strip().lower()
-    if mode == "direct" and shell_family in {"powershell", "powershell7", "pwsh"}:
-        return 0.85
-    return 0.3
-
-
-def execute_session_start_commands(session: SessionBase, command_text: str, target: dict[str, Any] | None = None) -> None:
+def execute_session_start_commands(session: SessionBase, command_text: str) -> None:
     payload = to_session_input(command_text)
     if not payload:
         return
-    time.sleep(session_start_command_delay_seconds(target))
+    time.sleep(0.3)
     session.write(payload)
 
 
@@ -3741,10 +3553,9 @@ def target_allowed_for_user(user: dict[str, Any] | None, target: dict[str, Any])
     return False
 
 
+def filtered_public_targets(user: dict[str, Any] | None) -> list[dict[str, Any]]:
+    return [item for item in public_targets() if target_allowed_for_user(user, item)]
 
-def filtered_public_targets(user: dict[str, Any] | None, active_session_id: str | None = None) -> list[dict[str, Any]]:
-    runtime_targets = build_targets(active_session_id, user=user) if user is not None else TARGETS
-    return [item for item in public_targets(runtime_targets, active_session_id=active_session_id) if target_allowed_for_user(user, item)]
 
 def empty_scheduler_state() -> dict[str, Any]:
     return {
@@ -3755,8 +3566,7 @@ def empty_scheduler_state() -> dict[str, Any]:
     }
 
 
-
-def build_docker_overview_for_user(user: dict[str, Any] | None, active_session_id: str | None = None) -> dict[str, Any]:
+def build_docker_overview_for_user(user: dict[str, Any] | None) -> dict[str, Any]:
     if not user_has_permission(user, "use_docker"):
         return {
             "engine": {"connected": False, "message": "Docker no disponible para este perfil."},
@@ -3768,13 +3578,11 @@ def build_docker_overview_for_user(user: dict[str, Any] | None, active_session_i
             "groups": [],
             "targets": [],
         }
-    overview = build_docker_overview()
-    if user is not None:
-        overview["targets"] = [item for item in filtered_public_targets(user, active_session_id=active_session_id) if str(item.get("connection_scope") or "") == "docker"]
-    return overview
+    return build_docker_overview()
 
-def build_runtime_config(user: dict[str, Any] | None = None, active_session_id: str | None = None) -> dict[str, Any]:
-    effective_active_session = normalize_optional_session_id(active_session_id) if user is not None else get_active_session_id()
+
+def build_runtime_config(user: dict[str, Any] | None = None) -> dict[str, Any]:
+    refresh_target_cache(get_active_session_id())
     auth_payload = {
         "mode": AUTH_MODE,
         "login_required": AUTH_MODE != "none",
@@ -3797,8 +3605,8 @@ def build_runtime_config(user: dict[str, Any] | None = None, active_session_id: 
             "ui": get_ui_config(),
             "remote_defaults": CONFIG.get("remote_defaults") or {},
             "terminal_presets": [],
-            "terminal_sessions": [],
-            "active_session_id": "",
+            "terminal_sessions": get_terminal_sessions(),
+            "active_session_id": get_active_session_id(),
             "session_terminal_overrides": {},
             "app_scripts": [],
             "docker_management": build_docker_overview_for_user(None),
@@ -3815,7 +3623,7 @@ def build_runtime_config(user: dict[str, Any] | None = None, active_session_id: 
         "host_os": HOST_OS,
         "host_os_label": TARGET_OS_LABELS.get(HOST_OS, HOST_OS),
         "supported_target_oses": TARGET_OS_OPTIONS,
-        "targets": filtered_public_targets(user, active_session_id=effective_active_session),
+        "targets": filtered_public_targets(user),
         "windows_shells": list(WINDOWS_SHELLS.values()),
         "local_shells": list(LOCAL_SHELLS.values()),
         "local_shells_by_os": {key: list(value.values()) for key, value in LOCAL_SHELL_CATALOG.items()},
@@ -3823,11 +3631,11 @@ def build_runtime_config(user: dict[str, Any] | None = None, active_session_id: 
         "ui": get_ui_config(),
         "remote_defaults": CONFIG.get("remote_defaults") or {},
         "terminal_presets": [normalize_preset(item, i) for i, item in enumerate(get_base_terminal_presets())],
-        "terminal_sessions": get_terminal_sessions(user),
-        "active_session_id": effective_active_session,
-        "session_terminal_overrides": get_session_terminal_overrides(user),
+        "terminal_sessions": get_terminal_sessions(),
+        "active_session_id": get_active_session_id(),
+        "session_terminal_overrides": get_session_terminal_overrides(),
         "app_scripts": get_script_store(),
-        "docker_management": build_docker_overview_for_user(user, effective_active_session),
+        "docker_management": build_docker_overview_for_user(user),
         "scheduler_management": SCHEDULER_RUNTIME.public_state() if permissions.get("manage_scheduler") else empty_scheduler_state(),
         "workspace_dir": str(APP_DIR),
         "scripts_dir": str(SCRIPTS_DIR),
@@ -3835,88 +3643,6 @@ def build_runtime_config(user: dict[str, Any] | None = None, active_session_id: 
     }
 
 
-
-def get_active_session_id_from_signed_cookie(signed_cookie: str | None, user: dict[str, Any] | None = None) -> str:
-    if user is None:
-        return get_active_session_id()
-    record = get_session_record_from_signed_cookie(signed_cookie) if signed_cookie else None
-    return get_active_session_id(user=user, session_record=record)
-
-
-def runtime_config_for_request(request: Request, user: dict[str, Any] | None) -> dict[str, Any]:
-    return build_runtime_config(user, get_active_session_id_from_signed_cookie(request.cookies.get(COOKIE_NAME), user))
-
-
-def update_signed_session_record(signed_cookie: str | None, **updates: Any) -> dict[str, Any] | None:
-    if not signed_cookie or "." not in str(signed_cookie):
-        return None
-    token = str(signed_cookie).rsplit(".", 1)[0]
-    with SESSION_LOCK:
-        record = SESSION_STORE.get(token)
-        if not record:
-            return None
-        record.update(updates)
-        SESSION_STORE[token] = record
-        return dict(record)
-
-
-def persist_user_session_preferences(user: dict[str, Any], data: dict[str, Any]) -> dict[str, Any]:
-    current = load_config()
-    user_store = current.get("user_management") or {}
-    raw_users = user_store.get("users") or []
-    updated_users: list[dict[str, Any]] = []
-    session_items = normalize_user_terminal_sessions(data.get("terminal_sessions") or [])
-    valid_session_ids = {item["id"] for item in session_items}
-    default_session_id = normalize_optional_session_id(data.get("default_session_id"))
-    if default_session_id not in valid_session_ids:
-        default_session_id = ""
-    session_overrides = normalize_session_override_map(data.get("session_terminal_overrides") or {}, valid_session_ids)
-    target_user_id = str(user.get("id") or "")
-    for raw in raw_users:
-        if not isinstance(raw, dict):
-            continue
-        next_item = dict(raw)
-        if str(raw.get("id") or "") == target_user_id:
-            next_item["terminal_sessions"] = session_items
-            next_item["default_session_id"] = default_session_id
-            next_item["session_terminal_overrides"] = session_overrides
-        updated_users.append(next_item)
-    user_store["users"] = updated_users
-    current["user_management"] = user_store
-    save_config(current)
-    global CONFIG
-    CONFIG = current
-    refreshed_user = find_user_by_id(target_user_id) or find_user_by_username(str(user.get("username") or ""))
-    return refreshed_user or user
-
-
-def resolve_target_for_user(user: dict[str, Any] | None, target_id: str, active_session_id: str | None = None) -> dict[str, Any] | None:
-    raw_target_id = str(target_id or "").strip()
-    if not raw_target_id:
-        return None
-    session_hint, base_target_id = split_scoped_target_id(raw_target_id)
-    if user is not None:
-        candidate_sessions: list[str] = []
-        normalized_active = normalize_optional_session_id(active_session_id)
-        for candidate in [session_hint, normalized_active, get_user_default_session_id(user), ""]:
-            if candidate is None:
-                continue
-            normalized_candidate = normalize_optional_session_id(candidate)
-            if normalized_candidate not in candidate_sessions:
-                candidate_sessions.append(normalized_candidate)
-        for candidate_session_id in candidate_sessions:
-            for target in build_targets(candidate_session_id, user=user):
-                if str(target.get("id") or "") == raw_target_id:
-                    return target
-                if str(target.get("_base_id") or "") == base_target_id and session_target_scope_token(target.get("session_id")) == session_target_scope_token(session_hint):
-                    return target
-        return None
-    target = TARGETS_BY_ID.get(raw_target_id)
-    if target:
-        return target
-    if session_hint is not None:
-        return TARGETS_BY_ID.get(base_target_id)
-    return None
 
 
 APP = FastAPI(title=APP_TITLE)
@@ -3933,7 +3659,7 @@ async def index() -> Any:
 @APP.get("/api/config")
 async def api_config(request: Request) -> JSONResponse:
     user = get_authenticated_user_from_request(request)
-    return JSONResponse(runtime_config_for_request(request, user))
+    return JSONResponse(build_runtime_config(user))
 
 
 @APP.get("/api/aliases")
@@ -3941,7 +3667,7 @@ async def api_aliases(target_id: str, request: Request) -> JSONResponse:
     user = get_authenticated_user_from_request(request)
     if not user:
         return JSONResponse({"ok": False, "message": "No autenticado."}, status_code=401)
-    target = resolve_target_for_user(user, target_id, get_active_session_id_from_signed_cookie(request.cookies.get(COOKIE_NAME), user))
+    target = TARGETS_BY_ID.get(target_id)
     if not target:
         return JSONResponse({"ok": False, "message": "Target no encontrado."}, status_code=404)
     if not target_allowed_for_user(user, target):
@@ -3968,7 +3694,7 @@ async def api_aliases_create(request: Request) -> JSONResponse:
     folder = normalize_alias_folder(str(data.get("folder") or data.get("group") or ""))
     if not alias_name or not command_text:
         return JSONResponse({"ok": False, "message": "Alias y comando son obligatorios."}, status_code=400)
-    target = resolve_target_for_user(user, target_id, get_active_session_id_from_signed_cookie(request.cookies.get(COOKIE_NAME), user))
+    target = TARGETS_BY_ID.get(target_id)
     if not target:
         return JSONResponse({"ok": False, "message": "Target no encontrado."}, status_code=404)
     if not target_allowed_for_user(user, target):
@@ -3983,7 +3709,7 @@ async def api_aliases_delete(alias_id: str, target_id: str, request: Request) ->
     user = get_authenticated_user_from_request(request)
     if not user:
         return JSONResponse({"ok": False, "message": "No autenticado."}, status_code=401)
-    target = resolve_target_for_user(user, target_id, get_active_session_id_from_signed_cookie(request.cookies.get(COOKIE_NAME), user))
+    target = TARGETS_BY_ID.get(target_id)
     if not target:
         return JSONResponse({"ok": False, "message": "Target no encontrado."}, status_code=404)
     if not target_allowed_for_user(user, target):
@@ -4000,28 +3726,17 @@ async def api_session_select(request: Request) -> JSONResponse:
     if not user:
         return JSONResponse({"ok": False, "message": "No autenticado."}, status_code=401)
     data = await request.json()
-    requested_session = normalize_optional_session_id(data.get("session_id"))
-    sessions = get_terminal_sessions(user)
-    valid_ids = {item["id"] for item in sessions}
-    if requested_session and requested_session not in valid_ids:
-        return JSONResponse({"ok": False, "message": "La sesión seleccionada no existe para este usuario."}, status_code=404)
-    update_signed_session_record(request.cookies.get(COOKIE_NAME), active_session_id=requested_session)
-    refreshed_user = find_user_by_id(str(user.get("id") or "")) or user
-    return JSONResponse({"ok": True, "config": build_runtime_config(refreshed_user, requested_session)})
-
-@APP.post("/api/session/preferences/save")
-async def api_session_preferences_save(request: Request) -> JSONResponse:
-    user = get_authenticated_user_from_request(request)
-    if not user:
-        return JSONResponse({"ok": False, "message": "No autenticado."}, status_code=401)
-    data = await request.json()
-    saved_user = persist_user_session_preferences(user, data)
-    requested_active_session = normalize_optional_session_id(data.get("active_session_id"))
-    valid_ids = {item["id"] for item in get_terminal_sessions(saved_user)}
-    if requested_active_session not in valid_ids:
-        requested_active_session = get_user_default_session_id(saved_user)
-    update_signed_session_record(request.cookies.get(COOKIE_NAME), active_session_id=requested_active_session)
-    return JSONResponse({"ok": True, "config": build_runtime_config(saved_user, requested_active_session)})
+    requested_session = normalize_terminal_session_id(str(data.get("session_id") or "default"))
+    sessions = get_terminal_sessions()
+    if requested_session not in {item["id"] for item in sessions}:
+        return JSONResponse({"ok": False, "message": "La sesión seleccionada no existe."}, status_code=404)
+    current = load_config()
+    current["active_session_id"] = requested_session
+    save_config(current)
+    global CONFIG
+    CONFIG = current
+    refresh_target_cache(requested_session)
+    return JSONResponse({"ok": True, "config": build_runtime_config(user)})
 
 
 @APP.post("/api/scripts/save")
@@ -4043,7 +3758,7 @@ async def api_scripts_save(request: Request) -> JSONResponse:
     save_config(current)
     global CONFIG
     CONFIG = current
-    return JSONResponse({"ok": True, "config": runtime_config_for_request(request, user)})
+    return JSONResponse({"ok": True, "config": build_runtime_config(user)})
 
 
 @APP.post("/api/config/save")
@@ -4051,65 +3766,62 @@ async def api_config_save(request: Request) -> JSONResponse:
     user = get_authenticated_user_from_request(request)
     if not user:
         return JSONResponse({"ok": False, "message": "No autenticado."}, status_code=401)
+    if not user_has_permission(user, "manage_config"):
+        return JSONResponse({"ok": False, "message": "Solo el administrador puede guardar la configuración global."}, status_code=403)
     data = await request.json()
-    if user_has_permission(user, "manage_config"):
-        current = load_config()
-        current["ui"] = {
-            **(current.get("ui") or {}),
-            "default_scrollback": int((data.get("ui") or {}).get("default_scrollback") or 20000),
-            "command_history_limit": max(1, int((data.get("ui") or {}).get("command_history_limit") or 50)),
-        }
-        remote_defaults = data.get("remote_defaults") or {}
-        current["remote_defaults"] = {
-            "host": str(remote_defaults.get("host") or ""),
-            "port": int(remote_defaults.get("port") or 22),
-            "username": str(remote_defaults.get("username") or ""),
-            "private_key_path": str(remote_defaults.get("private_key_path") or ""),
-            "strict_host_key": bool(remote_defaults.get("strict_host_key", True)),
-        }
-        incoming_presets = data.get("terminal_presets") or []
-        normalized = [normalize_preset(item, i) for i, item in enumerate(incoming_presets)]
-        local_overrides: dict[str, dict[str, Any]] = {}
-        remote_presets: list[dict[str, Any]] = []
-        for preset in normalized:
-            if preset["scope"] == "local":
-                shell_id = str(preset.get("shell_family") or "")
-                if shell_id:
-                    local_overrides[shell_id] = {
-                        "name": str(preset.get("name") or ""),
-                        "startup_command": str(preset.get("startup_command") or ""),
-                        "command_file_content": str(preset.get("command_file_content") or ""),
-                        "launch_command": str(preset.get("launch_command") or ""),
-                    }
-            else:
-                remote_presets.append({
-                    "id": preset["id"],
-                    "name": preset["name"],
-                    "scope": "remote",
-                    "auth_type": preset["auth_type"],
-                    "target_os": preset["target_os"],
-                    "shell_family": preset["shell_family"],
-                    "host": preset["host"],
-                    "port": preset["port"],
-                    "username": preset["username"],
-                    "private_key_path": preset["private_key_path"],
-                    "strict_host_key": preset["strict_host_key"],
-                    "startup_command": preset["startup_command"],
-                    "command_file_content": preset["command_file_content"],
-                    "launch_command": preset["launch_command"],
-                })
-        current["local_terminal_overrides"] = local_overrides
-        current["terminal_presets"] = remote_presets
-        save_config(current)
-        global CONFIG
-        CONFIG = current
-    saved_user = persist_user_session_preferences(user, data)
-    requested_active_session = normalize_optional_session_id(data.get("active_session_id"))
-    valid_ids = {item["id"] for item in get_terminal_sessions(saved_user)}
-    if requested_active_session not in valid_ids:
-        requested_active_session = get_user_default_session_id(saved_user)
-    update_signed_session_record(request.cookies.get(COOKIE_NAME), active_session_id=requested_active_session)
-    return JSONResponse({"ok": True, "config": build_runtime_config(saved_user, requested_active_session)})
+    current = load_config()
+    current["ui"] = {
+        **(current.get("ui") or {}),
+        "default_scrollback": int((data.get("ui") or {}).get("default_scrollback") or 20000),
+        "command_history_limit": max(1, int((data.get("ui") or {}).get("command_history_limit") or 50)),
+    }
+    remote_defaults = data.get("remote_defaults") or {}
+    current["remote_defaults"] = {
+        "host": str(remote_defaults.get("host") or ""),
+        "port": int(remote_defaults.get("port") or 22),
+        "username": str(remote_defaults.get("username") or ""),
+        "private_key_path": str(remote_defaults.get("private_key_path") or ""),
+        "strict_host_key": bool(remote_defaults.get("strict_host_key", True)),
+    }
+    incoming_presets = data.get("terminal_presets") or []
+    normalized = [normalize_preset(item, i) for i, item in enumerate(incoming_presets)]
+    local_overrides: dict[str, dict[str, Any]] = {}
+    remote_presets: list[dict[str, Any]] = []
+    for preset in normalized:
+        if preset["scope"] == "local":
+            shell_id = str(preset.get("shell_family") or "")
+            if shell_id:
+                local_overrides[shell_id] = {
+                    "name": str(preset.get("name") or ""),
+                    "startup_command": str(preset.get("startup_command") or ""),
+                    "command_file_content": str(preset.get("command_file_content") or ""),
+                    "launch_command": str(preset.get("launch_command") or ""),
+                }
+        else:
+            remote_presets.append({
+                "id": preset["id"],
+                "name": preset["name"],
+                "scope": "remote",
+                "auth_type": preset["auth_type"],
+                "target_os": preset["target_os"],
+                "shell_family": preset["shell_family"],
+                "host": preset["host"],
+                "port": preset["port"],
+                "username": preset["username"],
+                "private_key_path": preset["private_key_path"],
+                "strict_host_key": preset["strict_host_key"],
+                "startup_command": preset["startup_command"],
+                "command_file_content": preset["command_file_content"],
+                "launch_command": preset["launch_command"],
+            })
+    current["local_terminal_overrides"] = local_overrides
+    current["terminal_presets"] = remote_presets
+    save_config(current)
+    global CONFIG
+    CONFIG = current
+    refresh_target_cache(get_active_session_id())
+    return JSONResponse({"ok": True, "config": build_runtime_config(user)})
+
 
 @APP.post("/api/administration/save")
 async def api_administration_save(request: Request) -> JSONResponse:
@@ -4155,12 +3867,6 @@ async def api_administration_save(request: Request) -> JSONResponse:
             password_salt = password_payload["password_salt"]
             password_hash = password_payload["password_hash"]
             password_iterations = int(password_payload["password_iterations"])
-        terminal_sessions = normalize_user_terminal_sessions(raw.get("terminal_sessions") if "terminal_sessions" in raw else existing.get("terminal_sessions") or [])
-        valid_session_ids = {item["id"] for item in terminal_sessions}
-        default_session_id = normalize_optional_session_id(raw.get("default_session_id") if "default_session_id" in raw else existing.get("default_session_id"))
-        if default_session_id not in valid_session_ids:
-            default_session_id = ""
-        session_terminal_overrides = normalize_session_override_map(raw.get("session_terminal_overrides") if "session_terminal_overrides" in raw else existing.get("session_terminal_overrides") or {}, valid_session_ids)
         normalized_users.append({
             "id": user_id,
             "username": username,
@@ -4171,9 +3877,6 @@ async def api_administration_save(request: Request) -> JSONResponse:
             "password_hash": password_hash,
             "password_iterations": password_iterations,
             "explorer_entries": explorer_entries,
-            "terminal_sessions": terminal_sessions,
-            "default_session_id": default_session_id,
-            "session_terminal_overrides": session_terminal_overrides,
         })
     if not normalized_users:
         return JSONResponse({"ok": False, "message": "Debe existir al menos un usuario."}, status_code=400)
@@ -4189,8 +3892,9 @@ async def api_administration_save(request: Request) -> JSONResponse:
     global CONFIG
     CONFIG = current
     saved_user = find_user_by_id(str(user.get("id") or "")) or find_user_by_username(str(user.get("username") or ""))
-    active_session_id = get_active_session_id_from_signed_cookie(request.cookies.get(COOKIE_NAME), saved_user)
-    return JSONResponse({"ok": True, "config": build_runtime_config(saved_user, active_session_id)})
+    return JSONResponse({"ok": True, "config": build_runtime_config(saved_user)})
+
+
 
 @APP.post("/api/download/current-path")
 async def api_download_current_path(request: Request) -> Response:
@@ -4204,7 +3908,7 @@ async def api_download_current_path(request: Request) -> Response:
         return JSONResponse({"ok": False, "message": "Falta target_id."}, status_code=400)
     if not current_path:
         return JSONResponse({"ok": False, "message": "No se pudo detectar la ruta actual de la terminal."}, status_code=400)
-    target = resolve_target_for_user(user, target_id, get_active_session_id_from_signed_cookie(request.cookies.get(COOKIE_NAME), user)) or {}
+    target = TARGETS_BY_ID.get(target_id) or {}
     if not target or not target_allowed_for_user(user, target):
         return JSONResponse({"ok": False, "message": "El perfil actual no puede usar este target."}, status_code=403)
     if str(target.get("connection_scope") or "local") != "local":
@@ -4338,7 +4042,7 @@ async def api_import_current_path(request: Request) -> JSONResponse:
     if not files:
         return JSONResponse({"ok": False, "message": "No se seleccionó ninguna carpeta o no había archivos para copiar."}, status_code=400)
 
-    target = resolve_target_for_user(user, target_id, get_active_session_id_from_signed_cookie(request.cookies.get(COOKIE_NAME), user)) or {}
+    target = TARGETS_BY_ID.get(target_id) or {}
     if not target or not target_allowed_for_user(user, target):
         return JSONResponse({"ok": False, "message": "El perfil actual no puede usar este target."}, status_code=403)
     if str(target.get("connection_scope") or "local") != "local":
@@ -4600,7 +4304,7 @@ async def api_docker_overview(request: Request) -> JSONResponse:
     if not user_has_permission(user, "use_docker"):
         return JSONResponse({"ok": False, "message": "El perfil actual no tiene acceso a Docker."}, status_code=403)
     refresh_target_cache(get_active_session_id())
-    return JSONResponse({"ok": True, "docker_management": build_docker_overview_for_user(user, effective_active_session), "config": runtime_config_for_request(request, user)})
+    return JSONResponse({"ok": True, "docker_management": build_docker_overview_for_user(user), "config": build_runtime_config(user)})
 
 
 @APP.post("/api/docker/groups/save")
@@ -4619,7 +4323,7 @@ async def api_docker_groups_save(request: Request) -> JSONResponse:
             groups.append(normalized)
     save_docker_groups(groups)
     refresh_target_cache(get_active_session_id())
-    return JSONResponse({"ok": True, "docker_management": build_docker_overview_for_user(user, effective_active_session), "config": runtime_config_for_request(request, user)})
+    return JSONResponse({"ok": True, "docker_management": build_docker_overview_for_user(user), "config": build_runtime_config(user)})
 
 
 @APP.post("/api/docker/groups/run")
@@ -4638,7 +4342,7 @@ async def api_docker_groups_run(request: Request) -> JSONResponse:
     except Exception as exc:
         return JSONResponse({"ok": False, "message": str(exc)}, status_code=400)
     refresh_target_cache(get_active_session_id())
-    return JSONResponse({**result, "docker_management": build_docker_overview_for_user(user, effective_active_session), "config": runtime_config_for_request(request, user)})
+    return JSONResponse({**result, "docker_management": build_docker_overview_for_user(user), "config": build_runtime_config(user)})
 
 
 @APP.post("/api/docker/groups/generate-script")
@@ -4657,7 +4361,7 @@ async def api_docker_groups_generate_script(request: Request) -> JSONResponse:
     except Exception as exc:
         return JSONResponse({"ok": False, "message": str(exc)}, status_code=400)
     refresh_target_cache(get_active_session_id())
-    return JSONResponse({**result, "docker_management": build_docker_overview_for_user(user, effective_active_session), "config": runtime_config_for_request(request, user)})
+    return JSONResponse({**result, "docker_management": build_docker_overview_for_user(user), "config": build_runtime_config(user)})
 
 
 @APP.post("/api/docker/container/action")
@@ -4697,8 +4401,8 @@ async def api_docker_container_action(request: Request) -> JSONResponse:
         "container": container_name,
         "stdout": str(result.stdout or "").strip(),
         "stderr": str(result.stderr or "").strip(),
-        "docker_management": build_docker_overview_for_user(user, effective_active_session),
-        "config": runtime_config_for_request(request, user),
+        "docker_management": build_docker_overview_for_user(user),
+        "config": build_runtime_config(user),
     })
 
 
@@ -4729,7 +4433,7 @@ async def api_scheduler_state(request: Request) -> JSONResponse:
         return JSONResponse({"ok": False, "message": "No autenticado."}, status_code=401)
     if not user_has_permission(user, "manage_scheduler"):
         return JSONResponse({"ok": False, "message": "Solo el administrador puede gestionar Scheduler."}, status_code=403)
-    return JSONResponse({"ok": True, "scheduler_management": SCHEDULER_RUNTIME.public_state(), "config": runtime_config_for_request(request, user)})
+    return JSONResponse({"ok": True, "scheduler_management": SCHEDULER_RUNTIME.public_state(), "config": build_runtime_config(user)})
 
 
 @APP.get("/api/scheduler/logs")
@@ -4755,7 +4459,7 @@ async def api_scheduler_save(request: Request) -> JSONResponse:
     tasks = [item for item in normalized if item]
     save_scheduler_store(tasks)
     SCHEDULER_RUNTIME.reload_from_config(CONFIG)
-    return JSONResponse({"ok": True, "scheduler_management": SCHEDULER_RUNTIME.public_state(), "config": runtime_config_for_request(request, user)})
+    return JSONResponse({"ok": True, "scheduler_management": SCHEDULER_RUNTIME.public_state(), "config": build_runtime_config(user)})
 
 
 @APP.post("/api/scheduler/run-now")
@@ -4773,7 +4477,7 @@ async def api_scheduler_run_now(request: Request) -> JSONResponse:
         SCHEDULER_RUNTIME.run_now(task_id, reason='manual')
     except Exception as exc:
         return JSONResponse({"ok": False, "message": str(exc)}, status_code=400)
-    return JSONResponse({"ok": True, "message": "Tarea lanzada manualmente.", "scheduler_management": SCHEDULER_RUNTIME.public_state(), "config": runtime_config_for_request(request, user)})
+    return JSONResponse({"ok": True, "message": "Tarea lanzada manualmente.", "scheduler_management": SCHEDULER_RUNTIME.public_state(), "config": build_runtime_config(user)})
 
 
 @APP.post("/api/scheduler/event/fire")
@@ -4789,7 +4493,7 @@ async def api_scheduler_fire_event(request: Request) -> JSONResponse:
         count = SCHEDULER_RUNTIME.fire_event(event_key)
     except Exception as exc:
         return JSONResponse({"ok": False, "message": str(exc)}, status_code=400)
-    return JSONResponse({"ok": True, "message": f"Evento disparado. Tareas lanzadas: {count}.", "scheduler_management": SCHEDULER_RUNTIME.public_state(), "config": runtime_config_for_request(request, user)})
+    return JSONResponse({"ok": True, "message": f"Evento disparado. Tareas lanzadas: {count}.", "scheduler_management": SCHEDULER_RUNTIME.public_state(), "config": build_runtime_config(user)})
 
 
 
@@ -4836,22 +4540,21 @@ def create_signature(token: str) -> str:
     return hmac.new(SESSION_SECRET.encode("utf-8"), token.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
-
 def create_session(user: dict[str, Any] | str) -> str:
     if isinstance(user, str):
-        record = {"user_id": "", "username": user, "role": "", "active_session_id": "", "expires_at": time.time() + SESSION_TTL_SECONDS}
+        record = {"user_id": "", "username": user, "role": "", "expires_at": time.time() + SESSION_TTL_SECONDS}
     else:
         record = {
             "user_id": str(user.get("id") or ""),
             "username": str(user.get("username") or ""),
             "role": str(user.get("role") or ""),
-            "active_session_id": get_user_default_session_id(user),
             "expires_at": time.time() + SESSION_TTL_SECONDS,
         }
     token = secrets.token_urlsafe(32)
     with SESSION_LOCK:
         SESSION_STORE[token] = record
     return f"{token}.{create_signature(token)}"
+
 
 def get_session_record_from_signed_cookie(signed_cookie: str | None) -> dict[str, Any] | None:
     if not signed_cookie or "." not in signed_cookie:
@@ -4917,9 +4620,13 @@ def is_websocket_authenticated(websocket: WebSocket) -> bool:
 
 class SessionFactory:
     @staticmethod
-    def create_from_target(target: dict[str, Any], creds: dict[str, Any], cols: int, rows: int) -> SessionBase:
+    def create(target_id: str, creds: dict[str, Any], cols: int, rows: int) -> SessionBase:
+        target = TARGETS_BY_ID.get(target_id)
+        if not target and str(target_id).startswith("docker::"):
+            refresh_target_cache(get_active_session_id())
+            target = TARGETS_BY_ID.get(target_id)
         if not target:
-            raise RuntimeError("Target no encontrado.")
+            raise RuntimeError(f"Target no encontrado: {target_id}")
         mode = str(target.get("mode") or "direct")
         if mode == "direct":
             shell_id = str(target.get("shell_id") or DEFAULT_LOCAL_SHELL or "")
@@ -4945,13 +4652,6 @@ class SessionFactory:
             return ParamikoShellSession(host, port, username, None, key_path or None, key_content or None, (str(creds.get("passphrase") or "") or None), bool(target.get("strict_host_key", True)), cols, rows)
         raise RuntimeError(f"Modo no soportado: {mode}")
 
-    @staticmethod
-    def create(target_id: str, creds: dict[str, Any], cols: int, rows: int, user: dict[str, Any] | None = None, active_session_id: str | None = None) -> SessionBase:
-        target = resolve_target_for_user(user, target_id, active_session_id)
-        if not target and str(target_id).startswith("docker::"):
-            refresh_target_cache(get_active_session_id())
-            target = resolve_target_for_user(user, target_id, active_session_id)
-        return SessionFactory.create_from_target(target or {}, creds, cols, rows)
 
 @APP.websocket("/ws")
 async def websocket_terminal(websocket: WebSocket) -> None:
@@ -5003,48 +4703,21 @@ async def websocket_terminal(websocket: WebSocket) -> None:
                 stop_event.clear()
                 try:
                     target_id = str(payload.get("target_id") or "")
-                    creds = payload.get("credentials") or {}
-                    active_session_id = get_active_session_id_from_signed_cookie(websocket.cookies.get(COOKIE_NAME), user)
-                    target = resolve_target_for_user(user, target_id, active_session_id)
+                    target = TARGETS_BY_ID.get(target_id)
                     if not target or not target_allowed_for_user(user, target):
                         raise PermissionError("El perfil actual no puede abrir esta terminal.")
-                    session = SessionFactory.create(target_id, creds, int(payload.get("cols") or 120), int(payload.get("rows") or 30), user=user, active_session_id=active_session_id)
-                    start_commands = combine_start_commands(
-                        str((target or {}).get("startup_command") or ""),
-                        str((target or {}).get("command_file_content") or ""),
-                        str(creds.get("connect_command") or ""),
-                        str(creds.get("command_file_content") or ""),
-                    )
-                    defer_startup_commands = bool(payload.get("defer_startup_commands") or False)
-                    if start_commands and not defer_startup_commands:
-                        threading.Thread(target=execute_session_start_commands, args=(session, start_commands, target or {}), daemon=True).start()
-                    threading.Thread(target=reader_worker, daemon=True).start()
-                    await send_json({"type": "status", "status": "connected", "message": f"Sesión activa en {target_id}.", "target_id": target_id})
-                except Exception as exc:
-                    traceback.print_exc()
-                    await send_json({"type": "status", "status": "error", "message": f"{type(exc).__name__}: {exc}"})
-                continue
-            if msg_type == "run_startup":
-                if session is None:
-                    await send_json({"type": "status", "status": "error", "message": "No hay sesión activa para ejecutar el arranque."})
-                    continue
-                try:
-                    target_id = str(payload.get("target_id") or "")
                     creds = payload.get("credentials") or {}
-                    active_session_id = get_active_session_id_from_signed_cookie(websocket.cookies.get(COOKIE_NAME), user)
-                    target = resolve_target_for_user(user, target_id, active_session_id)
-                    if not target or not target_allowed_for_user(user, target):
-                        raise PermissionError("El perfil actual no puede ejecutar el arranque de esta terminal.")
+                    session = SessionFactory.create(target_id, creds, int(payload.get("cols") or 120), int(payload.get("rows") or 30))
                     start_commands = combine_start_commands(
-                        str((target or {}).get("startup_command") or ""),
-                        str((target or {}).get("command_file_content") or ""),
+                        str((TARGETS_BY_ID.get(target_id) or {}).get("startup_command") or ""),
+                        str((TARGETS_BY_ID.get(target_id) or {}).get("command_file_content") or ""),
                         str(creds.get("connect_command") or ""),
                         str(creds.get("command_file_content") or ""),
                     )
                     if start_commands:
-                        threading.Thread(target=execute_session_start_commands, args=(session, start_commands, target or {}), daemon=True).start()
-                    else:
-                        await send_json({"type": "status", "status": "ready", "message": "La terminal no tiene comando de arranque pendiente."})
+                        threading.Thread(target=execute_session_start_commands, args=(session, start_commands), daemon=True).start()
+                    threading.Thread(target=reader_worker, daemon=True).start()
+                    await send_json({"type": "status", "status": "connected", "message": f"Sesión activa en {target_id}.", "target_id": target_id})
                 except Exception as exc:
                     traceback.print_exc()
                     await send_json({"type": "status", "status": "error", "message": f"{type(exc).__name__}: {exc}"})

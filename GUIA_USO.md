@@ -47,6 +47,8 @@ Muestra:
 
 ## 4. Uso de targets locales
 
+Los targets locales se detectan automáticamente al iniciar la aplicación. No dependen de presets fijos guardados en el JSON.
+
 1. Crea la pestaña.
 2. Selecciona un target `Local: ...`.
 3. Pulsa `Conectar`.
@@ -54,7 +56,7 @@ Muestra:
 ## 5. Uso de targets remotos por contraseña
 
 1. Crea la pestaña.
-2. Selecciona `Remote SSH User/Pass: ...`.
+2. Selecciona `Remote: SSH Remote · User/Pass`.
 3. Rellena host, puerto y usuario.
 4. Introduce la contraseña.
 5. Pulsa `Conectar`.
@@ -62,7 +64,7 @@ Muestra:
 ## 6. Uso de targets remotos por clave
 
 1. Crea la pestaña.
-2. Selecciona `Remote SSH Public/Private key: ...`.
+2. Selecciona `Remote: SSH Remote · Public/Private Key`.
 3. Rellena host, puerto y usuario.
 4. Escribe la ruta de la clave privada.
 5. Escribe passphrase si aplica.

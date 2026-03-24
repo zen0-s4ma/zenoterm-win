@@ -10,7 +10,10 @@
   },
   "auth": {
     "mode": "password",
-    "app_password": "admin",
+    "admin_username": "admin",
+    "password_salt": "CG6KW3G3BV6t8XIp7p2lxg==",
+    "password_hash": "GXvuAKS4dvbA4MtR9UkKx0/P3qYqB1UbFAgBSL3NLvY=",
+    "password_iterations": 310000,
     "session_secret": "123456789",
     "session_ttl_seconds": 43200
   },
@@ -20,5 +23,183 @@
     "username": "",
     "private_key_path": "",
     "strict_host_key": true
+  },
+  "ui": {
+    "default_scrollback": 50000,
+    "command_history_limit": 50
+  },
+  "terminal_presets": [
+    {
+      "id": "remote-password",
+      "name": "SSH Remote · User/Pass",
+      "scope": "remote",
+      "auth_type": "password",
+      "shell_family": "bash",
+      "host": "",
+      "port": 22,
+      "username": "",
+      "private_key_path": "",
+      "strict_host_key": true,
+      "startup_command": "bash",
+      "command_file_content": "",
+      "launch_command": "bash",
+      "target_os": "linux"
+    },
+    {
+      "id": "remote-key",
+      "name": "SSH Remote · Public/Private Key",
+      "scope": "remote",
+      "auth_type": "key",
+      "shell_family": "bash",
+      "host": "",
+      "port": 22,
+      "username": "",
+      "private_key_path": "",
+      "strict_host_key": true,
+      "startup_command": "bash",
+      "command_file_content": "",
+      "launch_command": "bash",
+      "target_os": "linux"
+    }
+  ],
+  "app_aliases": {
+    "powershell": [
+      {
+        "id": "c2d9bf52ca39b32b",
+        "name": "aliastest",
+        "command": "ls",
+        "terminal_type": "powershell",
+        "folder": "default-group"
+      }
+    ]
+  },
+  "local_terminal_overrides": {},
+  "terminal_sessions": [
+    {
+      "id": "default",
+      "name": "Sesión principal"
+    }
+  ],
+  "active_session_id": "default",
+  "session_terminal_overrides": {},
+  "app_scripts": [],
+  "docker_management": {
+    "groups": []
+  },
+  "user_management": {
+    "users": [
+      {
+        "id": "user-admin",
+        "username": "admin",
+        "display_name": "Administrador",
+        "role": "administrator",
+        "enabled": true,
+        "password_salt": "Wt4NdkBfO8ytPVWroSr9uQ==",
+        "password_hash": "EsJYplM8iiESkO0evN3sEy2EU1nbla5mqZTnJxEEVbk=",
+        "password_iterations": 310000,
+        "explorer_entries": [],
+        "terminal_sessions": [
+          {
+            "id": "test-auto-sesion",
+            "name": "test-auto-sesion"
+          }
+        ],
+        "default_session_id": "",
+        "session_terminal_overrides": {
+          "test-auto-sesion": {
+            "local::powershell": {
+              "open_by_default": true,
+              "startup_command": "ls",
+              "name": "test-auto-sesion-pws"
+            },
+            "local::cmd": {
+              "open_by_default": true,
+              "startup_command": "dir",
+              "name": "test-auto-sesion-cmd"
+            }
+          }
+        }
+      },
+      {
+        "id": "user-total",
+        "username": "usuario-total",
+        "display_name": "Usuario total",
+        "role": "total",
+        "enabled": true,
+        "password_salt": "Ho1rE37GSsPWVpNCYJTz3g==",
+        "password_hash": "WQopd7bzEC2tMS7tmjdkyT3jXQon3YK9WvGT/tL03I0=",
+        "password_iterations": 310000,
+        "explorer_entries": [
+          {
+            "path": "D:\\mnt\\data\\zenoterm_edit",
+            "label": "Proyecto Zenoterm",
+            "access": "read_write"
+          }
+        ],
+        "terminal_sessions": [],
+        "default_session_id": "",
+        "session_terminal_overrides": {}
+      },
+      {
+        "id": "user-no-docker",
+        "username": "usuario-sin-docker",
+        "display_name": "Usuario sin Docker",
+        "role": "no_docker",
+        "enabled": true,
+        "password_salt": "8CHsztI3uojsPvAY3iRoYg==",
+        "password_hash": "2DDfC0eSalsbmuSwhDa/BtOKMnYZD56H5io1ioxhTO4=",
+        "password_iterations": 310000,
+        "explorer_entries": [
+          {
+            "path": "D:\\mnt\\data\\zenoterm_edit",
+            "label": "Proyecto Zenoterm",
+            "access": "read_write"
+          }
+        ],
+        "terminal_sessions": [],
+        "default_session_id": "",
+        "session_terminal_overrides": {}
+      },
+      {
+        "id": "user-remote",
+        "username": "usuario-remoto",
+        "display_name": "Usuario para remoto",
+        "role": "remote_only",
+        "enabled": true,
+        "password_salt": "ZK7p/C2/sX20MPd9TBgBEw==",
+        "password_hash": "X2ONijy8lxfOBCHt/MHr6TJwFrfrsQypW9A9dBOsnfY=",
+        "password_iterations": 310000,
+        "explorer_entries": [
+          {
+            "path": "D:\\mnt\\data\\zenoterm_edit",
+            "label": "Proyecto Zenoterm",
+            "access": "read_only"
+          }
+        ],
+        "terminal_sessions": [],
+        "default_session_id": "",
+        "session_terminal_overrides": {}
+      },
+      {
+        "id": "user-docker",
+        "username": "usuario-solo-docker",
+        "display_name": "Usuario solo Docker",
+        "role": "docker_only",
+        "enabled": true,
+        "password_salt": "bEJf09F1cVxrGVlRrqfPlQ==",
+        "password_hash": "MbpDO6rYMVbp4ECrDHRZjGf5KffJrwWbLaz6pA41c3s=",
+        "password_iterations": 310000,
+        "explorer_entries": [
+          {
+            "path": "D:\\mnt\\data\\zenoterm_edit",
+            "label": "Proyecto Zenoterm",
+            "access": "read_only"
+          }
+        ],
+        "terminal_sessions": [],
+        "default_session_id": "",
+        "session_terminal_overrides": {}
+      }
+    ]
   }
 }

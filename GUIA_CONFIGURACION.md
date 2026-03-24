@@ -1,89 +1,22 @@
 # Guía de configuración
 
-## 1. `zenoterm.config.json`
+## Inventario local y remoto
 
-Este fichero es el único fichero de configuración obligatorio del proyecto.
+Desde esta versión, Zenoterm separa claramente dos conceptos:
 
-### `app.title`
-Nombre visible de la aplicación en la UI y en algunos mensajes del backend.
+- **Terminales locales detectadas**: se descubren automáticamente al arrancar según el sistema operativo real del host. No se crean manualmente ni se fuerzan desde el JSON.
+- **Terminales remotas configuradas**: sí se guardan en `zenoterm.config.json` y siguen siendo editables desde la vista de configuración.
 
-### `server.host`
-Host de escucha del servidor web.
+## Qué se guarda ahora en `zenoterm.config.json`
 
-- `127.0.0.1`: solo acceso local.
-- `0.0.0.0`: acceso desde red local o remoto.
+- `terminal_presets`: solo presets remotos.
+- `local_terminal_overrides`: ajustes propios de Zenoterm para cada terminal local detectada (nombre visible, `launch_command`, `startup_command` o fichero `.command`).
+- `remote_defaults`, `ui`, `auth`, `server`: igual que antes.
 
-### `server.port`
-Puerto preferido.
+## Comportamiento del formulario
 
-### `server.open_browser`
-Si vale `true`, Zenoterm abre el navegador automáticamente al arrancar.
+- Al crear una pestaña **local**, el campo **Sistema operativo target** es solo informativo y muestra el host actual.
+- El desplegable **Target** enseña únicamente las terminales locales realmente detectadas en ese host.
+- Al crear una pestaña **remota**, el sistema operativo target vuelve a ser editable y filtra los presets remotos.
 
-### `server.auto_port_if_busy`
-Si el puerto elegido ya está ocupado, Zenoterm busca otro libre.
-
-### `auth.mode`
-Modo de autenticación del panel.
-
-- `password`: requiere contraseña para entrar en la web.
-- `none`: sin login.
-
-### `auth.app_password`
-Contraseña del panel cuando `auth.mode` es `password`.
-
-### `auth.session_secret`
-Secreto usado para firmar la cookie de sesión.
-
-### `auth.session_ttl_seconds`
-Duración máxima de la sesión web autenticada.
-
-### `remote_defaults.host`
-Host por defecto sugerido en los targets remotos. Puede dejarse vacío.
-
-### `remote_defaults.port`
-Puerto SSH por defecto.
-
-### `remote_defaults.username`
-Usuario SSH por defecto sugerido en la web. Puede dejarse vacío.
-
-### `remote_defaults.private_key_path`
-Ruta por defecto sugerida para targets `ssh_key`. Puede dejarse vacía.
-
-### `remote_defaults.strict_host_key`
-Si vale `true`, Zenoterm exige que el host remoto exista en `known_hosts`.
-
-## 2. `known_hosts`
-
-Zenoterm lo usa para validación estricta de host keys SSH.
-
-Si `strict_host_key` está activado y el host no existe en este fichero, la conexión remota fallará.
-
-## 3. `requirements.txt`
-
-Dependencias del proyecto:
-
-- `fastapi`
-- `uvicorn[standard]`
-- `pywinpty`
-- `paramiko`
-
-## 4. Targets generados automáticamente
-
-No se escriben manualmente en el JSON actual. El backend los genera en tiempo de arranque con estas reglas:
-
-### Locales
-
-- PowerShell moderna (`pwsh`) si existe
-- PowerShell 5.1 (`powershell.exe`) si existe
-- CMD si existe
-- Git Bash si existe
-- todas las distros WSL2 detectadas
-
-### Remotos
-
-Para cada shell local detectada, se crean:
-
-- un target `Remote SSH User/Pass: ...`
-- un target `Remote SSH Public/Private key: ...`
-
-Los datos variables del remoto se introducen en la propia web por pestaña.
+- De base el proyecto trae solo dos presets remotos iniciales: uno por contraseña y otro por clave. Después puedes editarlos, duplicar lógica creando otros nuevos o especializarlos por SO/shell.
